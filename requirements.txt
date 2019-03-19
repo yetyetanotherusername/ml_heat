@@ -5,4 +5,4 @@ scikit-learn
 tensorflow
 keras
 matplotlib
-
+-e git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
