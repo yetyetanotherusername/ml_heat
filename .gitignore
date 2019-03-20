@@ -1,2 +1,5 @@
 # python environment
 .env
+
+# special folders
+__*__
