@@ -58,7 +58,6 @@ class DataLoader(object):
         if organisation_ids is None:
             with self.readfile() as file:
                 organisation_ids = list(file['organisations'].keys())
-                update = True
 
         num_orgas = len(organisation_ids)
         with self.writefile() as file:
@@ -69,7 +68,7 @@ class DataLoader(object):
 
             for idx, organisation_id in enumerate(organisation_ids):
                 if organisation_id in animals_group.keys() and not update:
-                    print('\nAnimals found in store, skipped loading')
+                    print('Animals found in store, skipped loading')
                     continue
 
                 index = idx + 1
@@ -83,7 +82,7 @@ class DataLoader(object):
 
                 except Exception as e:
                     print('\n' + str(e))
-                    animals = []
+                    continue
 
                 try:
                     a_subgroup = animals_group.create_group(
@@ -99,8 +98,10 @@ class DataLoader(object):
                         name=animal['_id'],
                         data=json.dumps(animal))
 
+        print('\n')
+
     def run(self, update=False):
-        self.load_organisations(update)
+        # self.load_organisations(update)
         self.load_animals(update=update)
 
 
