@@ -34,15 +34,17 @@ class DataLoader(object):
         if update:
             with h5.File(self.store_path, 'w') as file:
                 organisations = self.oldapi.query_organisations()
-                payload = json.dumps(organisations)
-                file.create_dataset(name='organisations', data=payload)
+                file.create_dataset(
+                    name='organisations',
+                    data=json.dumps(organisations))
         else:
             print('Organisations found in store, skipped loading')
 
     def load_animals(self):
 
         with h5.File(self.store_path, 'r') as file:
-            print(file['organisations'])
+            organisations = json.loads(file['organisations'][()])
+            print(organisations)
 
         # self.animals = []
         # for organisation_id in self.organisation_ids:
