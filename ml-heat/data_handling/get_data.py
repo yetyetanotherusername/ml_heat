@@ -9,15 +9,15 @@ from sxapi import LowLevelAPI, APIv2
 PRIVATE_TOKEN = ('i-am-no-longer-a-token')
 
 PRIVATE_ENDPOINT = 'http://127.0.0.1:8787/internapi/v1/'
-# 'https://api.smaxtec.com/internapi/v0/'
+
 PUBLIC_ENDPOINTv2 = 'https://api.smaxtec.com/api/v2/'
 
 
 class DataLoader(object):
-    # TODO: implement asynchronous operation
     def __init__(self):
         self.api = APIv2(
-            api_key=PRIVATE_TOKEN, endpoint=PUBLIC_ENDPOINTv2).low
+            api_key=PRIVATE_TOKEN, endpoint=PUBLIC_ENDPOINTv2,
+            asynchronous=True).low
 
         self.oldapi = LowLevelAPI(
             api_key=PRIVATE_TOKEN,
@@ -59,50 +59,42 @@ class DataLoader(object):
             with self.readfile() as file:
                 organisation_ids = list(file['organisations'].keys())
 
-        num_orgas = len(organisation_ids)
+        print('Loading animals')
         with self.writefile() as file:
             try:
                 animals_group = file.create_group('animals')
             except ValueError:
                 animals_group = file['animals']
 
-            for idx, organisation_id in enumerate(organisation_ids):
-                if organisation_id in animals_group.keys() and not update:
-                    print('Animals found in store, skipped loading')
-                    continue
+            filtered_ids = [x for x in organisation_ids
+                            if x not in animals_group.keys() or update]
 
-                index = idx + 1
-                string = ('\rLoading animals for organisation: '
-                          f'{int(index / num_orgas * 100)}% done')
-                print(string, end='')
+            animals = self.api.get_animals_by_organisation_ids_async(
+                filtered_ids)
 
-                try:
-                    animals = self.api.get_animals_by_organisation_id(
-                        organisation_id)
+            print('Storing animals')
 
-                except Exception as e:
-                    print('\n' + str(e))
-                    continue
+            # flatten list of lists
+            animals = [inner for outer in animals for inner in outer]
 
+            for animal in animals:
+                organisation_id = animal['organisation_id']
                 try:
                     a_subgroup = animals_group.create_group(
                         name=organisation_id)
                 except ValueError:
                     a_subgroup = animals_group[organisation_id]
 
-                for animal in animals:
-                    if animal['_id'] in a_subgroup.keys():
-                        del a_subgroup[animal['_id']]
+                if animal['_id'] in a_subgroup.keys():
+                    del a_subgroup[animal['_id']]
 
-                    a_subgroup.create_dataset(
-                        name=animal['_id'],
-                        data=json.dumps(animal))
+                a_subgroup.create_dataset(
+                    name=animal['_id'],
+                    data=json.dumps(animal))
 
-        print('\n')
-
-    def run(self, update=False):
-        # self.load_organisations(update)
-        self.load_animals(update=update)
+    def run(self, organisation_ids=None, update=False):
+        self.load_organisations(update)
+        self.load_animals(organisation_ids=organisation_ids, update=update)
 
 
 def main():
