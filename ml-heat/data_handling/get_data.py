@@ -176,7 +176,7 @@ class DataLoader(object):
                         update=False,
                         metrics=['act', 'temp']):
 
-        from_dt = str(datetime.date(2019, 3, 1))
+        from_dt = str(datetime.date(2018, 12, 1))
         to_dt = str(datetime.date(2019, 4, 1))
 
         print('Loading sensor data')
@@ -200,34 +200,42 @@ class DataLoader(object):
                             filtered.append(animal_id)
             animal_ids = filtered
 
-        data = self.api.get_data_by_animal_ids_async(
-            animal_ids, from_dt, to_dt, metrics)
+        chunksize = 50  # animals per load - store cycle
+        chunks = [animal_ids[x:x + chunksize] for x in
+                  range(0, len(animal_ids), chunksize)]
+        num_chunks = len(chunks)
 
-        print('Storing sensor data')
-        for tupl in data:
-            ret = tupl[0]
-            animal_id = tupl[1].split('.')[-2].split('/')[-1]
-            organisation_id = self.organisation_id_for_animal_id(animal_id)
+        for idx, animal_ids in enumerate(chunks):
+            print(f'\rProcessing chunks: {idx + 1 // num_chunks * 100}% done',
+                  end='')
 
-            frame = pd.DataFrame()
-            for metric_dict in ret:
-                if not metric_dict['data']:
+            data = self.api.get_data_by_animal_ids_async(
+                animal_ids, from_dt, to_dt, metrics)
+
+            for tupl in data:
+                ret = tupl[0]
+                animal_id = tupl[1].split('.')[-2].split('/')[-1]
+                organisation_id = self.organisation_id_for_animal_id(animal_id)
+
+                frame = pd.DataFrame()
+                for metric_dict in ret:
+                    if not metric_dict['data']:
+                        continue
+                    transposed_data = list(zip(*metric_dict['data']))
+                    right = pd.DataFrame(index=transposed_data[0],
+                                         data=transposed_data[1],
+                                         columns=[metric_dict['metric']])
+
+                    frame = pd.concat(
+                        [frame, right], axis=1, join='outer', sort=True)
+
+                if frame.empty:
                     continue
-                transposed_data = list(zip(*metric_dict['data']))
-                right = pd.DataFrame(index=transposed_data[0],
-                                     data=transposed_data[1],
-                                     columns=[metric_dict['metric']])
 
-                frame = pd.concat(
-                    [frame, right], axis=1, join='outer', sort=True)
-
-            if frame.empty:
-                continue
-
-            frame.to_hdf(
-                self.store_path,
-                key=f'data/{organisation_id}/{animal_id}/sensordata',
-                complevel=9)
+                frame.to_hdf(
+                    self.store_path,
+                    key=f'data/{organisation_id}/{animal_id}/sensordata',
+                    complevel=9)
 
     def run(self, organisation_ids=None, update=False):
         self.load_organisations(update)
@@ -237,8 +245,8 @@ class DataLoader(object):
 
 def main():
     loader = DataLoader()
-    # loader.run()
-    loader.run(['59e7515edb84e482acce8339'])
+    loader.run()
+    # loader.run(['59e7515edb84e482acce8339'])
 
 
 if __name__ == '__main__':
