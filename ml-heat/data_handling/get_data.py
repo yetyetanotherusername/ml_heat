@@ -5,6 +5,7 @@ import os
 import json
 import datetime
 import h5py as h5
+import pandas as pd
 from sxapi import LowLevelAPI, APIv2
 
 PRIVATE_TOKEN = ('i-am-no-longer-a-token')
@@ -27,6 +28,7 @@ class DataLoader(object):
         self.store_path = os.getcwd() + '/ml-heat/__data_store__/data.hdf5'
         self._organisation_ids = None
         self._animal_ids = None
+        self._animal_orga_map = None
 
     def readfile(self):
         return h5.File(self.store_path, 'r')
@@ -63,6 +65,19 @@ class DataLoader(object):
                 filtered = [x for x in ids if x != 'organisation']
                 animal_ids += filtered
         return animal_ids
+
+    def organisation_id_for_animal_id(self, animal_id):
+        if self._animal_orga_map is None:
+            with self.readfile() as file:
+                self._animal_orga_map = json.loads(
+                    file['lookup/animal_to_orga'][()])
+
+        try:
+            return self._animal_orga_map[animal_id]
+        except KeyError:
+            return None
+        except Exception as e:
+            print(e)
 
     def load_organisations(self, update=False):
         # TODO: switch to apiv2 once implemented
@@ -104,18 +119,32 @@ class DataLoader(object):
 
             filtered_orga_ids = [x for x in organisation_ids if x not in keys]
 
+        if not filtered_orga_ids:
+            return
+
         print('Loading animals')
-        animals = self.api.get_animals_by_organisation_ids_async(
+        returns = self.api.get_animals_by_organisation_ids_async(
             filtered_orga_ids)
+
+        animals = list(zip(*returns))[0]
 
         # flatten list of lists
         animals = [inner for outer in animals for inner in outer]
 
         print('Storing animals')
         with self.writefile() as file:
+            if self._animal_orga_map is None:
+                try:
+                    self._animal_orga_map = json.loads(
+                        file['lookup/animal_to_orga'][()])
+                except Exception:
+                    self._animal_orga_map = {}
+
             for animal in animals:
                 organisation_id = animal['organisation_id']
                 orga_group = file[f'data/{organisation_id}']
+
+                self._animal_orga_map[animal['_id']] = organisation_id
 
                 try:
                     a_subgroup = orga_group.create_group(
@@ -130,9 +159,24 @@ class DataLoader(object):
                     name='animal',
                     data=json.dumps(animal))
 
-    def load_sensordata(self, organisation_ids=None, update=False):
-        metrics = ['act', 'temp']
-        from_dt = str(datetime.date(2014, 1, 1))
+            try:
+                lookup_group = file.create_group('lookup')
+            except ValueError:
+                lookup_group = file['lookup']
+
+            if 'animal_to_orga' in lookup_group.keys():
+                del lookup_group['animal_to_orga']
+
+            lookup_group.create_dataset(
+                name='animal_to_orga',
+                data=json.dumps(self._animal_orga_map))
+
+    def load_sensordata(self,
+                        organisation_ids=None,
+                        update=False,
+                        metrics=['act', 'temp']):
+
+        from_dt = str(datetime.date(2019, 3, 1))
         to_dt = str(datetime.date(2019, 4, 1))
 
         print('Loading sensor data')
@@ -156,23 +200,45 @@ class DataLoader(object):
                             filtered.append(animal_id)
             animal_ids = filtered
 
-        with self.writefile() as file:
-            
+        data = self.api.get_data_by_animal_ids_async(
+            animal_ids, from_dt, to_dt, metrics)
 
-            data = self.api.get_data_by_animal_ids_async(
-                animal_ids, from_dt, to_dt, metrics)
+        print('Storing sensor data')
+        for tupl in data:
+            ret = tupl[0]
+            animal_id = tupl[1].split('.')[-2].split('/')[-1]
+            organisation_id = self.organisation_id_for_animal_id(animal_id)
 
-        print(data[0])
+            frame = pd.DataFrame()
+            for metric_dict in ret:
+                if not metric_dict['data']:
+                    continue
+                transposed_data = list(zip(*metric_dict['data']))
+                right = pd.DataFrame(index=transposed_data[0],
+                                     data=transposed_data[1],
+                                     columns=[metric_dict['metric']])
+
+                frame = pd.concat(
+                    [frame, right], axis=1, join='outer', sort=True)
+
+            if frame.empty:
+                continue
+
+            frame.to_hdf(
+                self.store_path,
+                key=f'data/{organisation_id}/{animal_id}/sensordata',
+                complevel=9)
 
     def run(self, organisation_ids=None, update=False):
         self.load_organisations(update)
         self.load_animals(organisation_ids=organisation_ids, update=update)
-        # self.load_sensordata(organisation_ids=organisation_ids, update=update)
+        self.load_sensordata(organisation_ids=organisation_ids, update=update)
 
 
 def main():
     loader = DataLoader()
-    loader.run()
+    # loader.run()
+    loader.run(['59e7515edb84e482acce8339'])
 
 
 if __name__ == '__main__':
