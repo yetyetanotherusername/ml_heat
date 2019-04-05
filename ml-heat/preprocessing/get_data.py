@@ -12,7 +12,7 @@ PRIVATE_TOKEN = ('i-am-no-longer-a-token')
 
 PRIVATE_ENDPOINT = 'http://127.0.0.1:8787/internapi/v1/'
 
-PUBLIC_ENDPOINTv2 = 'https://api.smaxtec.com/api/v2/'
+PUBLIC_ENDPOINTv2 = 'https://api-staging.smaxtec.com/api/v2/'
 
 
 class DataLoader(object):
@@ -25,7 +25,7 @@ class DataLoader(object):
             api_key=PRIVATE_TOKEN,
             private_endpoint=PRIVATE_ENDPOINT).privatelow
 
-        self.store_path = os.getcwd() + '/ml-heat/__data_store__/data.hdf5'
+        self.store_path = os.getcwd() + '/ml-heat/__data_store__/rawdata.hdf5'
         self._organisation_ids = None
         self._animal_ids = None
         self._animal_orga_map = None
@@ -179,7 +179,7 @@ class DataLoader(object):
         from_dt = str(datetime.date(2018, 12, 1))
         to_dt = str(datetime.date(2019, 4, 1))
 
-        print('Loading sensor data')
+        print('Preparing to load sensor data')
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
 
@@ -206,8 +206,9 @@ class DataLoader(object):
         num_chunks = len(chunks)
 
         for idx, animal_ids in enumerate(chunks):
-            print(f'\rProcessing chunks: {idx + 1 // num_chunks * 100}% done',
-                  end='')
+            print('\rProcessing chunks: '
+                  f'{round((idx + 1) / num_chunks * 100)}% done, '
+                  f'{idx + 1}/{num_chunks}', end='')
 
             data = self.api.get_data_by_animal_ids_async(
                 animal_ids, from_dt, to_dt, metrics)
@@ -216,6 +217,9 @@ class DataLoader(object):
                 ret = tupl[0]
                 animal_id = tupl[1].split('.')[-2].split('/')[-1]
                 organisation_id = self.organisation_id_for_animal_id(animal_id)
+
+                if organisation_id is None:
+                    continue
 
                 frame = pd.DataFrame()
                 for metric_dict in ret:
@@ -243,10 +247,71 @@ class DataLoader(object):
         self.load_sensordata(organisation_ids=organisation_ids, update=update)
 
 
+class DataTransformer(object):
+    def __init__(self, organisation_ids=None):
+        self.train_store_path = (os.getcwd() +
+                                 '/ml-heat/__data_store__/traindata.hdf5')
+        self.raw_store_path = (os.getcwd() +
+                               '/ml-heat/__data_store__/rawdata.hdf5')
+
+        self._organisation_ids = organisation_ids
+
+    def readfile(self):
+        return h5.File(self.raw_store_path, 'r')
+
+    @property
+    def organisation_ids(self):
+        if self._organisation_ids is None:
+            with self.readfile() as file:
+                self._organisation_ids = list(file['data'].keys())
+        return self._organisation_ids
+
+    def load_data(self):
+        frame = pd.DataFrame()
+        for organisation_id in self.organisation_ids:
+            with self.readfile() as file:
+                # organisation = json.loads(
+                #     file[f'data/{organisation_id}/organisation'][()])
+
+                animal_ids = list(file[f'data/{organisation_id}'].keys())
+
+            animal_ids = list(filter(
+                lambda x: x != 'organisation', animal_ids))
+
+            for animal_id in animal_ids:
+                with self.readfile() as file:
+                    animal = json.loads(
+                        file[f'data/{organisation_id}/{animal_id}/animal'][()])
+
+                try:
+                    data = pd.read_hdf(
+                        self.raw_store_path,
+                        key=f'data/{organisation_id}/{animal_id}/sensordata')
+                except KeyError:
+                    continue
+
+                data['organisation_id'] = organisation_id
+                data['group_id'] = animal['group_id']
+                data['animal_id'] = animal_id
+
+                frame = pd.concat([frame, data])
+
+        frame.index.names = ['datetime']
+        frame = frame.set_index(
+            ['organisation_id', 'group_id', 'animal_id', frame.index])
+
+        frame.to_hdf(self.train_store_path, key='dataset', complevel=9)
+
+    def run(self):
+        self.load_data()
+
+
 def main():
-    loader = DataLoader()
-    loader.run()
-    # loader.run(['59e7515edb84e482acce8339'])
+    # loader = DataLoader()
+    # loader.run()
+
+    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    transformer.run()
 
 
 if __name__ == '__main__':
