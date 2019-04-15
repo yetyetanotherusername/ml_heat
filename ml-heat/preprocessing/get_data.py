@@ -266,9 +266,14 @@ class DataTransformer(object):
                 self._organisation_ids = list(file['data'].keys())
         return self._organisation_ids
 
-    def load_data(self):
+    def transform_data(self):
         frame = pd.DataFrame()
-        for organisation_id in self.organisation_ids:
+        print('\rLoading data from organisations')
+        olen = len(self.organisation_ids)
+        for idx, organisation_id in enumerate(self.organisation_ids):
+            print('Loading organisations: '
+                  f'{round((idx + 1) / olen * 100)}% done, {idx + 1}/{olen}',
+                  end='')
             with self.readfile() as file:
                 # organisation = json.loads(
                 #     file[f'data/{organisation_id}/organisation'][()])
@@ -303,14 +308,14 @@ class DataTransformer(object):
         frame.to_hdf(self.train_store_path, key='dataset', complevel=9)
 
     def run(self):
-        self.load_data()
+        self.transform_data()
 
 
 def main():
-    # loader = DataLoader()
-    # loader.run()
+    loader = DataLoader()
+    loader.run()
 
-    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    transformer = DataTransformer()
     transformer.run()
 
 
