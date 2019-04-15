@@ -268,12 +268,14 @@ class DataTransformer(object):
 
     def transform_data(self):
         frame = pd.DataFrame()
-        print('\rLoading data from organisations')
+        print('Loading data from organisations')
         olen = len(self.organisation_ids)
         for idx, organisation_id in enumerate(self.organisation_ids):
-            print('Loading organisations: '
-                  f'{round((idx + 1) / olen * 100)}% done, {idx + 1}/{olen}',
-                  end='')
+
+            pstring = ('\rLoading organisations: '
+                       f'{round((idx + 1) / olen * 100)}% done, '
+                       f'{idx + 1}/{olen}')
+
             with self.readfile() as file:
                 # organisation = json.loads(
                 #     file[f'data/{organisation_id}/organisation'][()])
@@ -283,7 +285,15 @@ class DataTransformer(object):
             animal_ids = list(filter(
                 lambda x: x != 'organisation', animal_ids))
 
-            for animal_id in animal_ids:
+            alen = len(animal_ids)
+            for aidx, animal_id in enumerate(animal_ids):
+
+                astring = (' | Loading animals: '
+                           f'{round((aidx + 1) / alen * 100)}% done, '
+                           f'{aidx + 1}/{alen}')
+
+                print(pstring + astring, end='')
+
                 with self.readfile() as file:
                     animal = json.loads(
                         file[f'data/{organisation_id}/{animal_id}/animal'][()])
@@ -301,6 +311,7 @@ class DataTransformer(object):
 
                 frame = pd.concat([frame, data])
 
+        print('\nStoring data')
         frame.index.names = ['datetime']
         frame = frame.set_index(
             ['organisation_id', 'group_id', 'animal_id', frame.index])
