@@ -267,7 +267,7 @@ class DataTransformer(object):
         return self._organisation_ids
 
     def transform_data(self):
-        frame = pd.DataFrame()
+        framelist = []
         print('Loading data from organisations')
         olen = len(self.organisation_ids)
         for idx, organisation_id in enumerate(self.organisation_ids):
@@ -309,9 +309,10 @@ class DataTransformer(object):
                 data['group_id'] = animal['group_id']
                 data['animal_id'] = animal_id
 
-                frame = pd.concat([frame, data], sort=False)
+                framelist.append(data)
 
         print('\nStoring data')
+        frame = pd.concat(framelist, sort=False)
         frame.index.names = ['datetime']
         frame = frame.set_index(
             ['organisation_id', 'group_id', 'animal_id', frame.index]
