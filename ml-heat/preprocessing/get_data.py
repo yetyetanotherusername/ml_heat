@@ -292,7 +292,7 @@ class DataTransformer(object):
                            f'{round((aidx + 1) / alen * 100)}% done, '
                            f'{aidx + 1}/{alen}')
 
-                print(pstring + astring, end='', flush=True)
+                print(pstring + astring + (' ' * 10), end='', flush=True)
 
                 with self.readfile() as file:
                     animal = json.loads(
