@@ -309,12 +309,13 @@ class DataTransformer(object):
                 data['group_id'] = animal['group_id']
                 data['animal_id'] = animal_id
 
-                frame = pd.concat([frame, data])
+                frame = pd.concat([frame, data], sort=False)
 
         print('\nStoring data')
         frame.index.names = ['datetime']
         frame = frame.set_index(
-            ['organisation_id', 'group_id', 'animal_id', frame.index])
+            ['organisation_id', 'group_id', 'animal_id', frame.index]
+        ).sort_index()
 
         frame.to_hdf(self.train_store_path, key='dataset', complevel=9)
 
