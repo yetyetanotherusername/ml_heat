@@ -327,10 +327,10 @@ class DataTransformer(object):
 
                 try:
                     train_store.append(key='dataset', value=frame)
+                except KeyError as e:
+                    print(e)
                 except ValueError as e:
                     print(e)
-
-                train_store.append(key='dataset', value=frame)
 
     def run(self):
         self.transform_data()
