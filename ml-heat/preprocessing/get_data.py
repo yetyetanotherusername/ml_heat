@@ -325,10 +325,10 @@ class DataTransformer(object):
 
                 frame = frame.sort_index()
 
-                if 'act' not in frame.columns:
-                    frame['act'] = float('nan')
-                if 'temp' not in frame.columns:
-                    frame['temp'] = float('nan')
+                try:
+                    train_store.append(key='dataset', value=frame)
+                except ValueError as e:
+                    print(e)
 
                 train_store.append(key='dataset', value=frame)
 
