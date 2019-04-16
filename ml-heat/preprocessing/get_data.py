@@ -176,6 +176,7 @@ class DataLoader(object):
                         update=False,
                         metrics=['act', 'temp']):
 
+        # TODO: load larger timeframe
         from_dt = str(datetime.date(2018, 12, 1))
         to_dt = str(datetime.date(2019, 4, 1))
 
@@ -314,7 +315,7 @@ class DataTransformer(object):
 
                 if not framelist:
                     continue
-                print(f'{pstring} {astring} | Storing to file...',
+                print(f'{pstring}{astring} | Storing to file...',
                       end='\r', flush=True)
                 frame = pd.concat(framelist, sort=False)
                 frame.index.names = ['datetime']
@@ -324,11 +325,12 @@ class DataTransformer(object):
 
                 frame = frame.sort_index()
 
-                try:
-                    train_store.append(key='dataset', value=frame)
-                except ValueError as e:
-                    print(e)
-                    print(frame)
+                if 'act' not in frame.columns:
+                    frame['act'] = float('nan')
+                if 'temp' not in frame.columns:
+                    frame['temp'] = float('nan')
+
+                train_store.append(key='dataset', value=frame)
 
     def run(self):
         self.transform_data()
