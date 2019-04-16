@@ -275,8 +275,8 @@ class DataTransformer(object):
             for idx, organisation_id in enumerate(self.organisation_ids):
                 framelist = []
 
-                pstring = ('\rLoading organisations: '
-                           f'{round((idx + 1) / olen * 100)}% done, '
+                pstring = ('Loading organisations: '
+                           f'{round((idx + 1) / olen * 100)}%, '
                            f'{idx + 1}/{olen}')
 
                 # organisation = json.loads(
@@ -291,10 +291,10 @@ class DataTransformer(object):
                 for aidx, animal_id in enumerate(animal_ids):
 
                     astring = (' | Loading animals: '
-                               f'{round((aidx + 1) / alen * 100)}% done, '
+                               f'{round((aidx + 1) / alen * 100)}%, '
                                f'{aidx + 1}/{alen}')
 
-                    print(pstring + astring + (' ' * 10), end='', flush=True)
+                    print(pstring + astring + (' ' * 30), end='\r', flush=True)
 
                     animal = json.loads(
                         file[f'data/{organisation_id}/{animal_id}/animal'][()])
@@ -314,6 +314,8 @@ class DataTransformer(object):
 
                 if not framelist:
                     continue
+                print(f'{pstring} {astring} | Storing to file...',
+                      end='\r', flush=True)
                 frame = pd.concat(framelist, sort=False)
                 frame.index.names = ['datetime']
 
@@ -322,7 +324,11 @@ class DataTransformer(object):
 
                 frame = frame.sort_index()
 
-                train_store.append(key='dataset', value=frame)
+                try:
+                    train_store.append(key='dataset', value=frame)
+                except ValueError as e:
+                    print(e)
+                    print(frame)
 
     def run(self):
         self.transform_data()
