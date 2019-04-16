@@ -267,63 +267,62 @@ class DataTransformer(object):
         return self._organisation_ids
 
     def transform_data(self):
-        framelist = []
         print('Loading data from organisations')
         olen = len(self.organisation_ids)
-        for idx, organisation_id in enumerate(self.organisation_ids):
+        with self.readfile() as file, \
+                pd.HDFStore(self.train_store_path) as train_store:
 
-            pstring = ('\rLoading organisations: '
-                       f'{round((idx + 1) / olen * 100)}% done, '
-                       f'{idx + 1}/{olen}')
+            for idx, organisation_id in enumerate(self.organisation_ids):
+                framelist = []
 
-            with self.readfile() as file:
+                pstring = ('\rLoading organisations: '
+                           f'{round((idx + 1) / olen * 100)}% done, '
+                           f'{idx + 1}/{olen}')
+
                 # organisation = json.loads(
                 #     file[f'data/{organisation_id}/organisation'][()])
 
                 animal_ids = list(file[f'data/{organisation_id}'].keys())
 
-            animal_ids = list(filter(
-                lambda x: x != 'organisation', animal_ids))
+                animal_ids = list(filter(
+                    lambda x: x != 'organisation', animal_ids))
 
-            alen = len(animal_ids)
-            for aidx, animal_id in enumerate(animal_ids):
+                alen = len(animal_ids)
+                for aidx, animal_id in enumerate(animal_ids):
 
-                astring = (' | Loading animals: '
-                           f'{round((aidx + 1) / alen * 100)}% done, '
-                           f'{aidx + 1}/{alen}')
+                    astring = (' | Loading animals: '
+                               f'{round((aidx + 1) / alen * 100)}% done, '
+                               f'{aidx + 1}/{alen}')
 
-                print(pstring + astring + (' ' * 10), end='', flush=True)
+                    print(pstring + astring + (' ' * 10), end='', flush=True)
 
-                with self.readfile() as file:
                     animal = json.loads(
                         file[f'data/{organisation_id}/{animal_id}/animal'][()])
 
-                try:
-                    data = pd.read_hdf(
-                        self.raw_store_path,
-                        key=f'data/{organisation_id}/{animal_id}/sensordata')
-                except KeyError:
+                    try:
+                        data = pd.read_hdf(
+                            self.raw_store_path,
+                            key=f'data/{organisation_id}/{animal_id}/sensordata')
+                    except KeyError:
+                        continue
+
+                    data['organisation_id'] = organisation_id
+                    data['group_id'] = animal['group_id']
+                    data['animal_id'] = animal_id
+
+                    framelist.append(data)
+
+                if not framelist:
                     continue
+                frame = pd.concat(framelist, sort=False)
+                frame.index.names = ['datetime']
 
-                data['organisation_id'] = organisation_id
-                data['group_id'] = animal['group_id']
-                data['animal_id'] = animal_id
+                frame = frame.set_index(
+                    ['organisation_id', 'group_id', 'animal_id', frame.index])
 
-                framelist.append(data)
+                frame = frame.sort_index()
 
-        print('\nConcatenating data')
-        frame = pd.concat(framelist, sort=True)
-        frame.index.names = ['datetime']
-
-        print('Setting index')
-        frame = frame.set_index(
-            ['organisation_id', 'group_id', 'animal_id', frame.index])
-
-        print('Sorting')
-        frame = frame.sort_index()
-        
-        print('Storing data')
-        frame.to_hdf(self.train_store_path, key='dataset', complevel=9)
+                train_store.append(key='dataset', value=frame)
 
     def run(self):
         self.transform_data()
