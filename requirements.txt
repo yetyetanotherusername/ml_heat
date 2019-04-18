@@ -7,4 +7,5 @@ keras
 matplotlib
 tables
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
-anthilldb @ git+https://bitbucket.org/smaxtec/anthilldb.git#egg=anthilldb
+-e git://github.com/wuttem/cattledb.git#egg=cattledb
+-e git+ssh://git@bitbucket.org/smaxtec/anthilldb.git#egg=anthilldb

@@ -37,9 +37,9 @@ class DataLoader(object):
             credentials=None,
             table_prefix=LiveConfig.TABLE_PREFIX,
             metric_definition=LiveConfig.METRICS,
-            pool_size=12)
+            pool_size=30)
 
-        self.pool = ThreadPoolExecutor(12)
+        self.pool = ThreadPoolExecutor(30)
 
         self.store_path = os.getcwd() + '/ml-heat/__data_store__/rawdata.hdf5'
         self._organisation_ids = None
@@ -98,6 +98,44 @@ class DataLoader(object):
             return None
         except Exception as e:
             print(e)
+
+    def to_frame(self, future, animal_id, organisations):
+        ret = future.result()
+        animal_id = ret[0].key
+        organisation_id = self.organisation_id_for_animal_id(animal_id)
+
+        if organisation_id is None:
+            return None, None, None
+
+        organisation = organisations[organisation_id]
+
+        frame = pd.DataFrame()
+        for timeseries in ret:
+            data = timeseries.to_lists()
+
+            if not data[0]:
+                continue
+
+            timestamps = data[0]
+            values = data[1]
+
+            right = pd.DataFrame(index=timestamps,
+                                 data=values,
+                                 columns=[timeseries.metric])
+
+            right.index = pd.to_datetime(
+                right.index, unit='s', utc=True)
+
+            right.index = right.index.tz_convert(
+                organisation['timezone'])
+
+            frame = pd.concat(
+                [frame, right], axis=1, join='outer', sort=True)
+
+        if frame.empty:
+            return None, None, None
+
+        return organisation_id, animal_id, frame
 
     def load_organisations(self, update=False):
         # TODO: switch to apiv2 once implemented
@@ -196,12 +234,19 @@ class DataLoader(object):
                         update=False,
                         metrics=['act', 'temp']):
 
-        from_dt = datetime.datetime(2018, 3, 1)
+        from_dt = datetime.datetime(2018, 4, 1)
         to_dt = datetime.datetime(2019, 4, 1)
 
         print('Preparing to load sensor data')
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
+
+        # load organisations
+        organisations = {}
+        with self.readfile() as file:
+            for organisation_id in organisation_ids:
+                organisations[organisation_id] = json.loads(
+                    file[f'data/{organisation_id}/organisation'][()])
 
         # retrieve animal ids to load data for
         animal_ids = self.animal_ids_for_organisations(organisation_ids)
@@ -225,43 +270,28 @@ class DataLoader(object):
                   range(0, len(animal_ids), chunksize)]
         num_chunks = len(chunks)
 
-        futures = []
         for idx, animal_ids in enumerate(chunks):
             print('\rProcessing chunks: '
                   f'{round((idx + 1) / num_chunks * 100)}% done, '
                   f'{idx + 1}/{num_chunks}', end='')
 
-            # data = self.api.get_data_by_animal_ids_async(
-            #     animal_ids, from_dt, to_dt, metrics)
+            tuples = []
             for animal_id in animal_ids:
-                futures.append(
-                    self.get_data(
-                        animal_id, from_dt, to_dt, metrics))
+                tuples.append(
+                    (animal_id, self.get_data(
+                        animal_id, from_dt, to_dt, metrics)))
 
-            print(futures[0].result(240))
-            assert False
+            frame_tuples = []
+            for tupl in tuples:
+                animal_id = tupl[0]
+                future = tupl[1]
+                frame_tuples.append(self.pool.submit(
+                    self.to_frame, future, animal_id, organisations))
 
-            for tupl in data:
-                ret = tupl[0]
-                animal_id = tupl[1].split('.')[-2].split('/')[-1]
-                organisation_id = self.organisation_id_for_animal_id(animal_id)
+            for frame_tuple in frame_tuples:
+                organisation_id, animal_id, frame = frame_tuple.result()
 
-                if organisation_id is None:
-                    continue
-
-                frame = pd.DataFrame()
-                for metric_dict in ret:
-                    if not metric_dict['data']:
-                        continue
-                    transposed_data = list(zip(*metric_dict['data']))
-                    right = pd.DataFrame(index=transposed_data[0],
-                                         data=transposed_data[1],
-                                         columns=[metric_dict['metric']])
-
-                    frame = pd.concat(
-                        [frame, right], axis=1, join='outer', sort=True)
-
-                if frame.empty:
+                if not organisation_id:
                     continue
 
                 frame.to_hdf(
