@@ -37,9 +37,9 @@ class DataLoader(object):
             credentials=None,
             table_prefix=LiveConfig.TABLE_PREFIX,
             metric_definition=LiveConfig.METRICS,
-            pool_size=30)
+            pool_size=12)
 
-        self.pool = ThreadPoolExecutor(30)
+        self.pool = ThreadPoolExecutor(12)
 
         self.store_path = os.getcwd() + '/ml-heat/__data_store__/rawdata.hdf5'
         self._organisation_ids = None
