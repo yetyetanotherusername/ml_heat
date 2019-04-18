@@ -7,12 +7,18 @@ import datetime
 import h5py as h5
 import pandas as pd
 from sxapi import LowLevelAPI, APIv2
+from anthilldb.client import DirectDBClient
+from anthilldb.settings import LiveConfig
+from concurrent.futures import ThreadPoolExecutor
 
 PRIVATE_TOKEN = ('i-am-no-longer-a-token')
 
 PRIVATE_ENDPOINT = 'http://127.0.0.1:8787/internapi/v1/'
 
 PUBLIC_ENDPOINTv2 = 'https://api-staging.smaxtec.com/api/v2/'
+
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
+    os.path.join(os.getcwd(), 'key.json'))
 
 
 class DataLoader(object):
@@ -25,6 +31,16 @@ class DataLoader(object):
             api_key=PRIVATE_TOKEN,
             private_endpoint=PRIVATE_ENDPOINT).privatelow
 
+        self.dbclient = DirectDBClient(
+            project_id=LiveConfig.GCP_PROJECT_ID,
+            instance_id=LiveConfig.GCP_INSTANCE_ID,
+            credentials=None,
+            table_prefix=LiveConfig.TABLE_PREFIX,
+            metric_definition=LiveConfig.METRICS,
+            pool_size=12)
+
+        self.pool = ThreadPoolExecutor(12)
+
         self.store_path = os.getcwd() + '/ml-heat/__data_store__/rawdata.hdf5'
         self._organisation_ids = None
         self._animal_ids = None
@@ -35,6 +51,10 @@ class DataLoader(object):
 
     def writefile(self):
         return h5.File(self.store_path, 'a')
+
+    def get_data(self, animal_id, from_dt, to_dt, metrics):
+        return self.pool.submit(
+            self.dbclient.get_metrics, animal_id, metrics, from_dt, to_dt)
 
     @property
     def organisation_ids(self):
@@ -176,9 +196,8 @@ class DataLoader(object):
                         update=False,
                         metrics=['act', 'temp']):
 
-        # TODO: load larger timeframe
-        from_dt = str(datetime.date(2018, 12, 1))
-        to_dt = str(datetime.date(2019, 4, 1))
+        from_dt = datetime.datetime(2018, 3, 1)
+        to_dt = datetime.datetime(2019, 4, 1)
 
         print('Preparing to load sensor data')
         if organisation_ids is None:
@@ -201,18 +220,26 @@ class DataLoader(object):
                             filtered.append(animal_id)
             animal_ids = filtered
 
-        chunksize = 50  # animals per load - store cycle
+        chunksize = 100  # animals per load - store cycle
         chunks = [animal_ids[x:x + chunksize] for x in
                   range(0, len(animal_ids), chunksize)]
         num_chunks = len(chunks)
 
+        futures = []
         for idx, animal_ids in enumerate(chunks):
             print('\rProcessing chunks: '
                   f'{round((idx + 1) / num_chunks * 100)}% done, '
                   f'{idx + 1}/{num_chunks}', end='')
 
-            data = self.api.get_data_by_animal_ids_async(
-                animal_ids, from_dt, to_dt, metrics)
+            # data = self.api.get_data_by_animal_ids_async(
+            #     animal_ids, from_dt, to_dt, metrics)
+            for animal_id in animal_ids:
+                futures.append(
+                    self.get_data(
+                        animal_id, from_dt, to_dt, metrics))
+
+            print(futures[0].result(240))
+            assert False
 
             for tupl in data:
                 ret = tupl[0]
@@ -340,8 +367,8 @@ def main():
     loader = DataLoader()
     loader.run()
 
-    transformer = DataTransformer()
-    transformer.run()
+    # transformer = DataTransformer()
+    # transformer.run()
 
 
 if __name__ == '__main__':
