@@ -3,13 +3,18 @@
 
 import os
 import json
+import pickle
 import datetime
 import h5py as h5
 import pandas as pd
+from tqdm import tqdm
 from sxapi import LowLevelAPI, APIv2
 from anthilldb.client import DirectDBClient
 from anthilldb.settings import LiveConfig
-from concurrent.futures import ThreadPoolExecutor
+from anthilldb.commands.downloader import download_key
+from concurrent.futures import (ThreadPoolExecutor,
+                                ProcessPoolExecutor,
+                                as_completed)
 
 PRIVATE_TOKEN = ('i-am-no-longer-a-token')
 
@@ -19,6 +24,25 @@ PUBLIC_ENDPOINTv2 = 'https://api-staging.smaxtec.com/api/v2/'
 
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
     os.path.join(os.getcwd(), 'key.json'))
+
+
+def parse_csv(filepath, timezone):
+    try:
+        frame = pd.read_csv(
+            filepath, index_col=0, parse_dates=[0],
+            date_parser=lambda col: pd.to_datetime(col, utc=True))
+    except pd.errors.EmptyDataError:
+        os.remove(filepath)
+    except Exception as e:
+                print(e)
+
+    frame = frame.tz_convert(timezone)
+
+    os.remove(filepath)
+
+    writepath = filepath.replace('.csv', '')
+    with open(writepath, 'wb'):
+        pickle.dump(frame)
 
 
 class DataLoader(object):
@@ -37,23 +61,25 @@ class DataLoader(object):
             credentials=None,
             table_prefix=LiveConfig.TABLE_PREFIX,
             metric_definition=LiveConfig.METRICS,
-            pool_size=12)
+            pool_size=24)
 
-        self.pool = ThreadPoolExecutor(12)
+        self.thread_pool = ThreadPoolExecutor(24)
+        self.process_pool = ProcessPoolExecutor(os.cpu_count())
 
-        self.store_path = os.getcwd() + '/ml-heat/__data_store__/rawdata.hdf5'
+        self.store_path = os.path.join(os.getcwd(), 'ml-heat/__data_store__')
+        self.rawdata_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self._organisation_ids = None
         self._animal_ids = None
         self._animal_orga_map = None
 
     def readfile(self):
-        return h5.File(self.store_path, 'r')
+        return h5.File(self.rawdata_path, 'r')
 
     def writefile(self):
-        return h5.File(self.store_path, 'a')
+        return h5.File(self.rawdata_path, 'a')
 
     def get_data(self, animal_id, from_dt, to_dt, metrics):
-        return self.pool.submit(
+        return self.thread_pool.submit(
             self.dbclient.get_metrics, animal_id, metrics, from_dt, to_dt)
 
     @property
@@ -98,44 +124,6 @@ class DataLoader(object):
             return None
         except Exception as e:
             print(e)
-
-    def to_frame(self, future, animal_id, organisations):
-        ret = future.result()
-        animal_id = ret[0].key
-        organisation_id = self.organisation_id_for_animal_id(animal_id)
-
-        if organisation_id is None:
-            return None, None, None
-
-        organisation = organisations[organisation_id]
-
-        frame = pd.DataFrame()
-        for timeseries in ret:
-            data = timeseries.to_lists()
-
-            if not data[0]:
-                continue
-
-            timestamps = data[0]
-            values = data[1]
-
-            right = pd.DataFrame(index=timestamps,
-                                 data=values,
-                                 columns=[timeseries.metric])
-
-            right.index = pd.to_datetime(
-                right.index, unit='s', utc=True)
-
-            right.index = right.index.tz_convert(
-                organisation['timezone'])
-
-            frame = pd.concat(
-                [frame, right], axis=1, join='outer', sort=True)
-
-        if frame.empty:
-            return None, None, None
-
-        return organisation_id, animal_id, frame
 
     def load_organisations(self, update=False):
         # TODO: switch to apiv2 once implemented
@@ -229,24 +217,17 @@ class DataLoader(object):
                 name='animal_to_orga',
                 data=json.dumps(self._animal_orga_map))
 
-    def load_sensordata(self,
-                        organisation_ids=None,
-                        update=False,
-                        metrics=['act', 'temp']):
+    def load_sensordata_from_db(self,
+                                organisation_ids=None,
+                                update=False,
+                                metrics=['act', 'temp']):
 
+        print('Preparing to load sensor data')
         from_dt = datetime.datetime(2018, 4, 1)
         to_dt = datetime.datetime(2019, 4, 1)
 
-        print('Preparing to load sensor data')
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
-
-        # load organisations
-        organisations = {}
-        with self.readfile() as file:
-            for organisation_id in organisation_ids:
-                organisations[organisation_id] = json.loads(
-                    file[f'data/{organisation_id}/organisation'][()])
 
         # retrieve animal ids to load data for
         animal_ids = self.animal_ids_for_organisations(organisation_ids)
@@ -265,44 +246,75 @@ class DataLoader(object):
                             filtered.append(animal_id)
             animal_ids = filtered
 
-        chunksize = 100  # animals per load - store cycle
-        chunks = [animal_ids[x:x + chunksize] for x in
-                  range(0, len(animal_ids), chunksize)]
-        num_chunks = len(chunks)
+        temp_path = os.path.join(self.store_path, 'temp')
+        os.mkdir(temp_path)
 
-        for idx, animal_ids in enumerate(chunks):
-            print('\rProcessing chunks: '
-                  f'{round((idx + 1) / num_chunks * 100)}% done, '
-                  f'{idx + 1}/{num_chunks}', end='')
+        results = [self.thread_pool.submit(
+            download_key, self.dbclient, _id, metrics, from_dt, to_dt,
+            temp_path) for _id in animal_ids]
 
-            tuples = []
-            for animal_id in animal_ids:
-                tuples.append(
-                    (animal_id, self.get_data(
-                        animal_id, from_dt, to_dt, metrics)))
+        kwargs = {
+            'total': len(results),
+            'unit': 'files',
+            'unit_scale': True,
+            'leave': True
+        }
 
-            frame_tuples = []
-            for tupl in tuples:
-                animal_id = tupl[0]
-                future = tupl[1]
-                frame_tuples.append(self.pool.submit(
-                    self.to_frame, future, animal_id, organisations))
+        for f in tqdm(as_completed(results), **kwargs):
+            pass
 
-            for frame_tuple in frame_tuples:
-                organisation_id, animal_id, frame = frame_tuple.result()
+        print('Download finished...')
 
-                if not organisation_id:
-                    continue
+    def sensordata_to_hdf5(self):
+        print('Processing data into storage format...')
 
-                frame.to_hdf(
-                    self.store_path,
-                    key=f'data/{organisation_id}/{animal_id}/sensordata',
-                    complevel=9)
+        temp_path = os.path.join(self.store_path, 'temp')
+        files = [s for s in os.listdir(temp_path) if s.endswith('.csv')]
+        filepaths = [os.path.join(temp_path, x) for x in files]
+
+        futures = []
+        with self.readfile() as file:
+            for filepath in filepaths:
+                animal_id = filepath.split('/')[-1].split('.csv')[0]
+                organisation_id = self.organisation_id_for_animal_id(animal_id)
+                organisation = json.loads(
+                    file[f'data/{organisation_id}/organisation'][()])
+                timezone = organisation['timezone']
+
+                futures.append(self.process_pool.submit(
+                    parse_csv, filepath, timezone))
+
+        kwargs = {
+            'total': len(futures),
+            'unit': 'files',
+            'unit_scale': True,
+            'leave': True
+        }
+
+        for f in tqdm(as_completed(futures), **kwargs):
+            pass
+
+        print('Writing data to file')
+        for future in tqdm(futures):
+            frame = future.result()
+            if frame.empty:
+                continue
+            frame.to_hdf(
+                self.rawdata_path,
+                key=f'data/{organisation_id}/{animal_id}/sensordata',
+                complevel=9)
+
+        print('Finished saving rawdata')
+        print('Cleaning up')
+        os.rmdir(temp_path)
+        print('Done!')
 
     def run(self, organisation_ids=None, update=False):
         self.load_organisations(update)
         self.load_animals(organisation_ids=organisation_ids, update=update)
-        self.load_sensordata(organisation_ids=organisation_ids, update=update)
+        self.load_sensordata_from_db(
+            organisation_ids=organisation_ids, update=update)
+        # self.sensordata_to_hdf5()
 
 
 class DataTransformer(object):
