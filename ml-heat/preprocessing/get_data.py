@@ -272,7 +272,7 @@ class DataLoader(object):
         files = [s for s in os.listdir(temp_path) if s.endswith('.csv')]
         filepaths = [os.path.join(temp_path, x) for x in files]
 
-        futures = []
+        tuples = []
         with self.readfile() as file:
             for filepath in filepaths:
                 animal_id = filepath.split('/')[-1].split('.csv')[0]
@@ -281,24 +281,30 @@ class DataLoader(object):
                     file[f'data/{organisation_id}/organisation'][()])
                 timezone = organisation['timezone']
 
-                futures.append(self.process_pool.submit(
-                    parse_csv, filepath, timezone))
+                tuples.append((organisation_id, animal_id,
+                    self.process_pool.submit(
+                        parse_csv, filepath, timezone)))
 
         kwargs = {
-            'total': len(futures),
+            'total': len(tuples),
             'unit': 'files',
             'unit_scale': True,
             'leave': True
         }
 
-        for f in tqdm(as_completed(futures), **kwargs):
+        for f in tqdm(as_completed(list(zip(*tuples))[2]), **kwargs):
             pass
 
         print('Writing data to file')
-        for future in tqdm(futures):
+        for tupl in tqdm(tuples):
+            organisation_id = tupl[0]
+            animal_id = tupl[1]
+            future = tupl[2]
             frame = future.result()
+
             if frame.empty:
                 continue
+
             frame.to_hdf(
                 self.rawdata_path,
                 key=f'data/{organisation_id}/{animal_id}/sensordata',
@@ -314,7 +320,7 @@ class DataLoader(object):
         self.load_animals(organisation_ids=organisation_ids, update=update)
         self.load_sensordata_from_db(
             organisation_ids=organisation_ids, update=update)
-        # self.sensordata_to_hdf5()
+        self.sensordata_to_hdf5()
 
 
 class DataTransformer(object):
