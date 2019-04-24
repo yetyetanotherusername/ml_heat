@@ -26,6 +26,9 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
     os.path.join(os.getcwd(), 'key.json'))
 
 
+# this is defined here because it is used in a process pool -> needs to be
+# pickleable and only functions that are defined on the top level can be
+# serialized
 def parse_csv(filepath, timezone):
     try:
         frame = pd.read_csv(
@@ -34,15 +37,18 @@ def parse_csv(filepath, timezone):
     except pd.errors.EmptyDataError:
         os.remove(filepath)
     except Exception as e:
-                print(e)
+        print(e)
 
     frame = frame.tz_convert(timezone)
 
     os.remove(filepath)
 
+    if frame.empty:
+        return
+
     writepath = filepath.replace('.csv', '')
-    with open(writepath, 'wb'):
-        pickle.dump(frame)
+    with open(writepath, 'wb') as file:
+        pickle.dump(frame, file)
 
 
 class DataLoader(object):
@@ -61,9 +67,9 @@ class DataLoader(object):
             credentials=None,
             table_prefix=LiveConfig.TABLE_PREFIX,
             metric_definition=LiveConfig.METRICS,
-            pool_size=24)
+            pool_size=30)
 
-        self.thread_pool = ThreadPoolExecutor(24)
+        self.thread_pool = ThreadPoolExecutor(30)
         self.process_pool = ProcessPoolExecutor(os.cpu_count())
 
         self.store_path = os.path.join(os.getcwd(), 'ml-heat/__data_store__')
@@ -126,7 +132,7 @@ class DataLoader(object):
             print(e)
 
     def load_organisations(self, update=False):
-        # TODO: switch to apiv2 once implemented
+        # TODO: switch to apiv2 or anthilldb once implemented
 
         with self.writefile() as file:
             if 'data' not in file.keys() or update:
@@ -222,7 +228,7 @@ class DataLoader(object):
                                 update=False,
                                 metrics=['act', 'temp']):
 
-        print('Preparing to load sensor data')
+        print('Preparing to load sensor data...')
         from_dt = datetime.datetime(2018, 4, 1)
         to_dt = datetime.datetime(2019, 4, 1)
 
@@ -249,6 +255,8 @@ class DataLoader(object):
         temp_path = os.path.join(self.store_path, 'temp')
         os.mkdir(temp_path)
 
+        print('Loading sensordata...')
+
         results = [self.thread_pool.submit(
             download_key, self.dbclient, _id, metrics, from_dt, to_dt,
             temp_path) for _id in animal_ids]
@@ -259,50 +267,63 @@ class DataLoader(object):
             'unit_scale': True,
             'leave': True
         }
-
         for f in tqdm(as_completed(results), **kwargs):
             pass
 
         print('Download finished...')
 
-    def sensordata_to_hdf5(self):
+    def csv_to_pickle(self):
         print('Processing data into storage format...')
 
         temp_path = os.path.join(self.store_path, 'temp')
         files = [s for s in os.listdir(temp_path) if s.endswith('.csv')]
         filepaths = [os.path.join(temp_path, x) for x in files]
 
-        tuples = []
-        with self.readfile() as file:
-            for filepath in filepaths:
-                animal_id = filepath.split('/')[-1].split('.csv')[0]
-                organisation_id = self.organisation_id_for_animal_id(animal_id)
+        futures = []
+        for filepath in filepaths:
+            animal_id = filepath.split('/')[-1].split('.csv')[0]
+            organisation_id = self.organisation_id_for_animal_id(animal_id)
+            with self.readfile() as file:
                 organisation = json.loads(
                     file[f'data/{organisation_id}/organisation'][()])
-                timezone = organisation['timezone']
+            timezone = organisation['timezone']
 
-                tuples.append((organisation_id, animal_id,
-                    self.process_pool.submit(
-                        parse_csv, filepath, timezone)))
+            futures.append(
+                self.process_pool.submit(
+                    parse_csv, filepath, timezone))
 
         kwargs = {
-            'total': len(tuples),
+            'total': len(futures),
             'unit': 'files',
             'unit_scale': True,
             'leave': True
         }
 
-        for f in tqdm(as_completed(list(zip(*tuples))[2]), **kwargs):
+        for f in tqdm(as_completed(futures), **kwargs):
             pass
 
-        print('Writing data to file')
-        for tupl in tqdm(tuples):
-            organisation_id = tupl[0]
-            animal_id = tupl[1]
-            future = tupl[2]
-            frame = future.result()
+        print('Processing finished...')
+
+    def pickle_to_hdf(self):
+        print('Writing data to hdf file...')
+
+        temp_path = os.path.join(self.store_path, 'temp')
+        files = [s for s in os.listdir(temp_path) if not s.endswith('.csv')]
+        filepaths = [os.path.join(temp_path, p) for p in files]
+
+        for filepath in tqdm(filepaths):
+            animal_id = filepath.split('/')[-1]
+            organisation_id = self.organisation_id_for_animal_id(animal_id)
+
+            with open(filepath, 'rb') as file:
+                try:
+                    frame = pickle.load(file)
+                except EOFError:
+                    os.remove(filepath)
+                    continue
 
             if frame.empty:
+                os.remove(filepath)
                 continue
 
             frame.to_hdf(
@@ -310,8 +331,10 @@ class DataLoader(object):
                 key=f'data/{organisation_id}/{animal_id}/sensordata',
                 complevel=9)
 
-        print('Finished saving rawdata')
-        print('Cleaning up')
+            os.remove(filepath)
+
+        print('Finished saving rawdata...')
+        print('Cleaning up...')
         os.rmdir(temp_path)
         print('Done!')
 
@@ -320,7 +343,8 @@ class DataLoader(object):
         self.load_animals(organisation_ids=organisation_ids, update=update)
         self.load_sensordata_from_db(
             organisation_ids=organisation_ids, update=update)
-        self.sensordata_to_hdf5()
+        self.csv_to_pickle()
+        self.pickle_to_hdf()
 
 
 class DataTransformer(object):
