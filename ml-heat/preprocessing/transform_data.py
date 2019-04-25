@@ -112,7 +112,7 @@ class DataTransformer(object):
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 
-        with pd.HDFStore(self.train_store_path) as train_store:
+        with pd.HDFStore(self.train_store_path, complevel=9) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
                     frame = pickle.load(file)
