@@ -48,6 +48,10 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = pd.concat(framelist, sort=False)
     frame.index.names = ['datetime']
 
+    # remove localization -> index is localtime without tzinfo
+    # needed so we can have all animal indices in one column
+    frame = frame.tz_localize(None)
+
     frame = frame.set_index(
         ['organisation_id', 'group_id', 'animal_id', frame.index])
 
@@ -136,7 +140,7 @@ class DataTransformer(object):
 
 
 def main():
-    transformer = DataTransformer()
+    transformer = DataTransformer(['59e7515edb84e482acce8339'])
     transformer.run()
 
 
