@@ -72,7 +72,7 @@ class DataLoader(object):
         self.thread_pool = ThreadPoolExecutor(30)
         self.process_pool = ProcessPoolExecutor(os.cpu_count())
 
-        self.store_path = os.path.join(os.getcwd(), 'ml-heat/__data_store__')
+        self.store_path = os.path.join(os.getcwd(), 'ml_heat/__data_store__')
         self.rawdata_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self._organisation_ids = None
         self._animal_ids = None

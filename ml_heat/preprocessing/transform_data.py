@@ -9,9 +9,30 @@ import pandas as pd
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from sxutils.models.animal.cycle import AnimalLifecycle
+from sxutils.munch.cyclemunch import cycle_munchify
+from animal_serde import AnimalSchemaV2
+
+
+def calculate_dims(index, animal):
+    animal_cycle = AnimalLifecycle()
+
+    # timestamp conversion
+    animal = AnimalSchemaV2().load(animal).data
+    lifecycle_object = cycle_munchify(animal['lifecycle'])
+
+    for cycle in lifecycle_object.cycles_with_padding:
+        for event in cycle.events:
+            animal_cycle.addCycleEvent(event)
+
+    return animal_cycle.dims(index)
+
 
 def transform_organisation(organisation_id, readpath, temp_path):
     with h5.File(readpath, 'r') as readfile:
+
+        organisation = json.loads(
+            readfile[f'data/{organisation_id}/organisation'][()])
 
         animal_ids = list(readfile[f'data/{organisation_id}'].keys())
         animal_ids = list(filter(
@@ -36,9 +57,17 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
             # TODO: add annotations from animal object
 
+            # remove localization -> index is localtime without tzinfo
+            # needed so we can have all animal indices in one column
+            data = data.tz_localize(None)
+
             data['organisation_id'] = organisation_id
             data['group_id'] = animal['group_id']
             data['animal_id'] = animal_id
+            data['race'] = animal['race']
+            data['country'] = organisation['metadata']['country']
+            data['partner_id'] = organisation['partner_id']
+            data['DIM'] = calculate_dims(data.index, animal)
 
             framelist.append(data)
 
@@ -47,10 +76,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     frame = pd.concat(framelist, sort=False)
     frame.index.names = ['datetime']
-
-    # remove localization -> index is localtime without tzinfo
-    # needed so we can have all animal indices in one column
-    frame = frame.tz_localize(None)
 
     frame = frame.set_index(
         ['organisation_id', 'group_id', 'animal_id', frame.index])
@@ -67,7 +92,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
 class DataTransformer(object):
     def __init__(self, organisation_ids=None):
         self._organisation_ids = organisation_ids
-        self.store_path = os.path.join(os.getcwd(), 'ml-heat/__data_store__')
+        self.store_path = os.path.join(os.getcwd(), 'ml_heat/__data_store__')
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
 
@@ -130,13 +155,25 @@ class DataTransformer(object):
                     print(e)
 
         print('Finished writing training data...')
-        print('Cleaning up')
+        print('Cleaning up...')
         os.rmdir(temp_path)
         print('Done!')
 
+    def clear_data(self):
+        if os.path.exists(self.train_store_path):
+            os.remove(self.train_store_path)
+
+    def test(self):
+        print('Loading data...')
+        frame = pd.read_hdf(self.train_store_path, key='dataset')
+
+        print(frame)
+
     def run(self):
+        self.clear_data()
         self.transform_data()
         self.store_data()
+        self.test()
 
 
 def main():
