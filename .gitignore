@@ -3,3 +3,7 @@
 
 # special folders
 __*__
+
+# editor stuff
+*.sublime-project
+*.sublime-workspace

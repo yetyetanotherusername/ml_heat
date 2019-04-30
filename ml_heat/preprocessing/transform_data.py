@@ -17,15 +17,26 @@ from animal_serde import AnimalSchemaV2
 def calculate_dims(index, animal):
     animal_cycle = AnimalLifecycle()
 
-    # timestamp conversion
+    # transform animal document timestamps
     animal = AnimalSchemaV2().load(animal).data
+
     lifecycle_object = cycle_munchify(animal['lifecycle'])
 
     for cycle in lifecycle_object.cycles_with_padding:
         for event in cycle.events:
             animal_cycle.addCycleEvent(event)
 
-    return animal_cycle.dims(index)
+    # pass only unique dates to dim calc to reduce overhead
+    unique_dates = index.normalize().drop_duplicates()
+    dims = animal_cycle.dims(unique_dates)
+
+    series = pd.Series(dims, index=unique_dates, name='dims')
+    left = pd.Series(0, index=index, name='util')
+    frame = pd.concat([left, series], axis=1)
+    frame.dims = frame.dims.fillna(method='ffill')
+    frame = frame.dropna()
+
+    return frame.dims
 
 
 def transform_organisation(organisation_id, readpath, temp_path):
@@ -40,9 +51,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
         framelist = []
         for animal_id in animal_ids:
-            animal = json.loads(
-                readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
-
             try:
                 data = pd.read_hdf(
                     readpath,
@@ -55,6 +63,9 @@ def transform_organisation(organisation_id, readpath, temp_path):
             if data.empty:
                 continue
 
+            animal = json.loads(
+                readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
+
             # TODO: add annotations from animal object
 
             # remove localization -> index is localtime without tzinfo
@@ -65,6 +76,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
             data['group_id'] = animal['group_id']
             data['animal_id'] = animal_id
             data['race'] = animal['race']
+            data[data['race'] == 'CROSS_BREED_DAIRY_DAIRY', 'race'] = 'CBDD'
             data['country'] = organisation['metadata']['country']
             data['partner_id'] = organisation['partner_id']
             data['DIM'] = calculate_dims(data.index, animal)
@@ -115,6 +127,12 @@ class DataTransformer(object):
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
+        # for organisation_id in self.organisation_ids:
+        #     transform_organisation(
+        #         organisation_id,
+        #         self.raw_store_path,
+        #         temp_path)
+
         results = [self.process_pool.submit(
             transform_organisation, _id, self.raw_store_path, temp_path)
             for _id in self.organisation_ids]
@@ -152,6 +170,7 @@ class DataTransformer(object):
                 except KeyError as e:
                     print(e)
                 except ValueError as e:
+                    print(frame)
                     print(e)
 
         print('Finished writing training data...')
@@ -164,10 +183,14 @@ class DataTransformer(object):
             os.remove(self.train_store_path)
 
     def test(self):
-        print('Loading data...')
+        print('Test: Loading data...')
         frame = pd.read_hdf(self.train_store_path, key='dataset')
 
-        print(frame)
+        print(
+            frame.loc[(
+                '59e7515edb84e482acce8339',
+                '59e75177575fc94638c1f8e7',
+                '59e75f2b9e182f68cf25721d')])
 
     def run(self):
         self.clear_data()
@@ -177,7 +200,7 @@ class DataTransformer(object):
 
 
 def main():
-    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    transformer = DataTransformer()
     transformer.run()
 
 

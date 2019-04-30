@@ -9,12 +9,15 @@ import h5py as h5
 import pandas as pd
 from tqdm import tqdm
 from sxapi import LowLevelAPI, APIv2
-from anthilldb.client import DirectDBClient
 from anthilldb.settings import LiveConfig
+from anthilldb.client import DirectDBClient
 from anthilldb.commands.downloader import download_key
-from concurrent.futures import (ThreadPoolExecutor,
-                                ProcessPoolExecutor,
-                                as_completed)
+
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    ProcessPoolExecutor,
+    as_completed
+)
 
 PRIVATE_TOKEN = ('i-am-no-longer-a-token')
 
