@@ -72,11 +72,16 @@ def transform_organisation(organisation_id, readpath, temp_path):
             # needed so we can have all animal indices in one column
             data = data.tz_localize(None)
 
+            # shorten race field (hdf5 serde has limits on string length)
+            if animal['race'] == 'CROSS_BREED_DAIRY_DAIRY':
+                race = 'CBBD'
+            else:
+                race = animal['race']
+
             data['organisation_id'] = organisation_id
             data['group_id'] = animal['group_id']
             data['animal_id'] = animal_id
-            data['race'] = animal['race']
-            data[data['race'] == 'CROSS_BREED_DAIRY_DAIRY', 'race'] = 'CBDD'
+            data['race'] = race
             data['country'] = organisation['metadata']['country']
             data['partner_id'] = organisation['partner_id']
             data['DIM'] = calculate_dims(data.index, animal)
