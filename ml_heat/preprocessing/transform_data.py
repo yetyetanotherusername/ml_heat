@@ -72,12 +72,15 @@ def transform_organisation(organisation_id, readpath, temp_path):
             # needed so we can have all animal indices in one column
             data = data.tz_localize(None)
 
-            # shorten race field (hdf5 serde has limits on string length)
+            # shorten string fields (hdf5 serde has limits on string length)
             if len(animal['race']) > 9:
                 race = [word[0] + '_' for word in animal['race'].split('_')]
                 race = ''.join(race)
             else:
                 race = animal['race']
+
+            if len(organisation['partner_id']) > 9:
+                partner_id = organisation['partner_id'][:9]
 
             # country field may be unavailable
             country = animal.get('metadata', {}).get('country', float('nan'))
@@ -87,7 +90,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
             data['animal_id'] = animal_id
             data['race'] = race
             data['country'] = country
-            data['partner_id'] = organisation['partner_id']
+            data['partner_id'] = partner_id
             data['DIM'] = calculate_dims(data.index, animal)
 
             framelist.append(data)
