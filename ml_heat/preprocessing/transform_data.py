@@ -56,11 +56,13 @@ def transform_organisation(organisation_id, readpath, temp_path):
                     readpath,
                     key=f'data/{organisation_id}/{animal_id}/sensordata')
             except KeyError:
+                print('No data for sensor')
                 continue
             except Exception as e:
                 print(e)
 
             if data.empty:
+                print('No data for sensor')
                 continue
 
             animal = json.loads(
@@ -73,19 +75,19 @@ def transform_organisation(organisation_id, readpath, temp_path):
             data = data.tz_localize(None)
 
             # shorten string fields (hdf5 serde has limits on string length)
-            if len(animal['race']) > 9:
+            race = animal.get('race', 'N/A')
+
+            if len(race) > 9:
                 race = [word[0] + '_' for word in animal['race'].split('_')]
                 race = ''.join(race)
-            else:
-                race = animal['race']
 
-            if len(organisation['partner_id']) > 9:
-                partner_id = organisation['partner_id'][:9]
-            else:
-                partner_id = organisation['partner_id']
+            partner_id = organisation.get('partner_id', 'N/A')
+
+            if len(partner_id) > 9:
+                partner_id = partner_id[:9]
 
             # country field may be unavailable
-            country = animal.get('metadata', {}).get('country', float('nan'))
+            country = animal.get('metadata', {}).get('country', 'N/A')
 
             data['organisation_id'] = organisation_id
             data['group_id'] = animal['group_id']
@@ -98,6 +100,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
             framelist.append(data)
 
     if not framelist:
+        print(f'No sensor data for entire organisation {organisation_id}')
         return organisation_id
 
     frame = pd.concat(framelist, sort=False)
