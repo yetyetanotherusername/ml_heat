@@ -56,13 +56,11 @@ def transform_organisation(organisation_id, readpath, temp_path):
                     readpath,
                     key=f'data/{organisation_id}/{animal_id}/sensordata')
             except KeyError:
-                print('No data for sensor')
                 continue
             except Exception as e:
                 print(e)
 
             if data.empty:
-                print('No data for sensor')
                 continue
 
             animal = json.loads(
@@ -100,7 +98,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
             framelist.append(data)
 
     if not framelist:
-        print(f'No sensor data for entire organisation {organisation_id}')
         return organisation_id
 
     frame = pd.concat(framelist, sort=False)
