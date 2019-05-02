@@ -73,16 +73,20 @@ def transform_organisation(organisation_id, readpath, temp_path):
             data = data.tz_localize(None)
 
             # shorten race field (hdf5 serde has limits on string length)
-            if animal['race'] == 'CROSS_BREED_DAIRY_DAIRY':
-                race = 'CBBD'
+            if len(animal['race']) > 9:
+                race = [word[0] + '_' for word in animal['race'].split('_')]
+                race = ''.join(race)
             else:
                 race = animal['race']
+
+            # country field may be unavailable
+            country = animal.get('metadata', {}).get('country', float('nan'))
 
             data['organisation_id'] = organisation_id
             data['group_id'] = animal['group_id']
             data['animal_id'] = animal_id
             data['race'] = race
-            data['country'] = organisation['metadata']['country']
+            data['country'] = country
             data['partner_id'] = organisation['partner_id']
             data['DIM'] = calculate_dims(data.index, animal)
 
