@@ -81,6 +81,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
             if len(organisation['partner_id']) > 9:
                 partner_id = organisation['partner_id'][:9]
+            else:
+                partner_id = organisation['partner_id']
 
             # country field may be unavailable
             country = animal.get('metadata', {}).get('country', float('nan'))
