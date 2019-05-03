@@ -9,6 +9,8 @@ keras
 matplotlib
 tables
 marshmallow
+jupyterlab
+ipympl
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
 -e git://github.com/wuttem/cattledb.git#egg=cattledb
 -e git+ssh://git@bitbucket.org/smaxtec/anthilldb.git#egg=anthilldb

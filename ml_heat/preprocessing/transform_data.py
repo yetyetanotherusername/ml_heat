@@ -84,11 +84,15 @@ def transform_organisation(organisation_id, readpath, temp_path):
             if len(partner_id) > 9:
                 partner_id = partner_id[:9]
 
+            group_id = animal.get('group_id', 'N/A')
+            if group_id is None:
+                group_id = 'N/A'
+
             # country field may be unavailable
             country = animal.get('metadata', {}).get('country', 'N/A')
 
             data['organisation_id'] = organisation_id
-            data['group_id'] = animal['group_id']
+            data['group_id'] = group_id
             data['animal_id'] = animal_id
             data['race'] = race
             data['country'] = country

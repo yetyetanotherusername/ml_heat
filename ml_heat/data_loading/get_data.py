@@ -29,9 +29,6 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
     os.path.join(os.getcwd(), 'key.json'))
 
 
-# this is defined here because it is used in a process pool -> needs to be
-# pickleable and only functions that are defined on the top level can be
-# serialized
 def parse_csv(filepath, timezone):
     try:
         frame = pd.read_csv(
