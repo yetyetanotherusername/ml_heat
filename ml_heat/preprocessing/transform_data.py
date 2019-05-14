@@ -41,6 +41,7 @@ def calculate_dims(index, animal):
 
 def check_cyclic(inframe, animal):
     # TODO: filter event type!
+    # TODO: enforce holdoff
     lifecycle = animal['lifecycle']
     min_timedelta = pd.Timedelta(18, unit='days')
     max_timedelta = pd.Timedelta(24, unit='days')
@@ -56,7 +57,7 @@ def check_cyclic(inframe, animal):
             frame.event_ts, format=('%Y-%m-%dT%H:%M:%S'))
 
         for shift in columns:
-            frame[shift] = frame.event_ts.diff(shift).between(
+            frame[shift] = frame.event_ts.diff(shift).abs().between(
                 min_timedelta, max_timedelta)
 
         frame['cyclic'] = frame[columns].any(axis=1)
@@ -70,7 +71,6 @@ def check_cyclic(inframe, animal):
     if cyclic_rows.empty:
         return inframe
     cyclic_dts = cyclic_rows.event_ts.to_list()
-
 
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
