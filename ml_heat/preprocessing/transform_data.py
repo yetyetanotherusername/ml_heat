@@ -48,6 +48,8 @@ def check_cyclic(inframe, animal):
     cyclic_rows = pd.DataFrame()
     for cycle in lifecycle['cycles']:
         frame = pd.DataFrame(cycle['events'])
+        if frame.empty:
+            continue
         rows = len(frame.index)
         columns = [str(x) for x in range(-rows, rows + 1) if x != 0]
         frame.event_ts = pd.to_datetime(
@@ -63,9 +65,12 @@ def check_cyclic(inframe, animal):
         cyclic_rows = cyclic_rows.append(
             frame[frame.cyclic == True], sort=True)  # noqa
 
+    inframe.sort_index(inplace=True)
+
+    if cyclic_rows.empty:
+        return inframe
     cyclic_dts = cyclic_rows.event_ts.to_list()
 
-    inframe.sort_index(inplace=True)
 
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
@@ -82,7 +87,8 @@ def check_cyclic(inframe, animal):
     return inframe
 
 
-def calculate_labels(inframe, animal):
+def add_labels(inframe, animal):
+    # TODO: fill inseminated, pregnant, deleted columns
 
     # add label columns to frame
     inframe['cyclic'] = False
@@ -94,6 +100,66 @@ def calculate_labels(inframe, animal):
     inframe = check_cyclic(inframe, animal)
 
     return inframe
+
+
+def add_features(inframe, organisation, animal):
+    # shorten string fields (hdf5 serde has limits on string length)
+    race = animal.get('race', 'N/A')
+
+    if len(race) > 9:
+        race = [word[0] + '_' for word in animal['race'].split('_')]
+        race = ''.join(race)
+
+    partner_id = organisation.get('partner_id', 'N/A')
+
+    if len(partner_id) > 9:
+        partner_id = partner_id[:9]
+
+    group_id = animal.get('group_id', 'N/A')
+    if group_id is None:
+        group_id = 'N/A'
+
+    # country field may be unavailable
+    country = animal.get('metadata', {}).get('country', 'N/A')
+
+    inframe['organisation_id'] = organisation['_id']
+    inframe['group_id'] = group_id
+    inframe['animal_id'] = animal['_id']
+    inframe['race'] = race
+    inframe['country'] = country
+    inframe['partner_id'] = partner_id
+    inframe['DIM'] = calculate_dims(inframe.index, animal)
+
+    return inframe
+
+
+def transform_animal(organisation, animal_id, readpath, readfile):
+    organisation_id = organisation['_id']
+    try:
+        data = pd.read_hdf(
+            readpath,
+            key=f'data/{organisation_id}/{animal_id}/sensordata')
+    except KeyError:
+        return None
+    except Exception as e:
+        print(e)
+
+    if data.empty:
+        return None
+
+    animal = json.loads(
+        readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
+
+    # remove localization -> index is localtime without tzinfo
+    # needed so we can have all animal indices in one column
+    data = data.tz_localize(None)
+
+    # calculate all features and add them as columns
+    data = add_features(data, organisation, animal)
+    # calculate labels and add them as columns
+    data = add_labels(data, animal)
+
+    return data
 
 
 def transform_organisation(organisation_id, readpath, temp_path):
@@ -108,54 +174,12 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
         framelist = []
         for animal_id in animal_ids:
-            try:
-                data = pd.read_hdf(
-                    readpath,
-                    key=f'data/{organisation_id}/{animal_id}/sensordata')
-            except KeyError:
+            frame = transform_animal(
+                organisation, animal_id, readpath, readfile)
+
+            if frame is None:
                 continue
-            except Exception as e:
-                print(e)
-
-            if data.empty:
-                continue
-
-            animal = json.loads(
-                readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
-
-            # remove localization -> index is localtime without tzinfo
-            # needed so we can have all animal indices in one column
-            data = data.tz_localize(None)
-
-            # shorten string fields (hdf5 serde has limits on string length)
-            race = animal.get('race', 'N/A')
-
-            if len(race) > 9:
-                race = [word[0] + '_' for word in animal['race'].split('_')]
-                race = ''.join(race)
-
-            partner_id = organisation.get('partner_id', 'N/A')
-
-            if len(partner_id) > 9:
-                partner_id = partner_id[:9]
-
-            group_id = animal.get('group_id', 'N/A')
-            if group_id is None:
-                group_id = 'N/A'
-
-            # country field may be unavailable
-            country = animal.get('metadata', {}).get('country', 'N/A')
-
-            data['organisation_id'] = organisation_id
-            data['group_id'] = group_id
-            data['animal_id'] = animal_id
-            data['race'] = race
-            data['country'] = country
-            data['partner_id'] = partner_id
-            data['DIM'] = calculate_dims(data.index, animal)
-            data = calculate_labels(data, animal)
-
-            framelist.append(data)
+            framelist.append(frame)
 
     if not framelist:
         return organisation_id
@@ -245,6 +269,8 @@ class DataTransformer(object):
                     print(e)
                 except ValueError as e:
                     print(frame)
+                    print(e)
+                except Exception as e:
                     print(e)
 
         print('Finished writing training data...')
