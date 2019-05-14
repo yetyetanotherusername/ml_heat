@@ -39,6 +39,63 @@ def calculate_dims(index, animal):
     return frame.dims
 
 
+def check_cyclic(inframe, animal):
+    # TODO: filter event type!
+    lifecycle = animal['lifecycle']
+    min_timedelta = pd.Timedelta(18, unit='days')
+    max_timedelta = pd.Timedelta(24, unit='days')
+
+    cyclic_rows = pd.DataFrame()
+    for cycle in lifecycle['cycles']:
+        frame = pd.DataFrame(cycle['events'])
+        rows = len(frame.index)
+        columns = [str(x) for x in range(-rows, rows + 1) if x != 0]
+        frame.event_ts = pd.to_datetime(
+            frame.event_ts, format=('%Y-%m-%dT%H:%M:%S'))
+
+        for shift in columns:
+            frame[shift] = frame.event_ts.diff(shift).between(
+                min_timedelta, max_timedelta)
+
+        frame['cyclic'] = frame[columns].any(axis=1)
+        frame.drop(columns, inplace=True, axis=1)
+
+        cyclic_rows = cyclic_rows.append(
+            frame[frame.cyclic == True], sort=True)  # noqa
+
+    cyclic_dts = cyclic_rows.event_ts.to_list()
+
+    inframe.sort_index(inplace=True)
+
+    # find indices closest to cyclic heats and set cyclic column to true
+    # if no matching index is found inside tolerance of 24h, disregard
+    for dt in cyclic_dts:
+        try:
+            idx = inframe.index.get_loc(
+                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
+        except KeyError:
+            continue
+        except Exception as e:
+            print(e)
+
+        inframe.cyclic.iat[idx] = True
+    return inframe
+
+
+def calculate_labels(inframe, animal):
+
+    # add label columns to frame
+    inframe['cyclic'] = False
+    inframe['inseminated'] = False
+    inframe['pregnant'] = False
+    inframe['deleted'] = False
+
+    # cyclic heat analysis
+    inframe = check_cyclic(inframe, animal)
+
+    return inframe
+
+
 def transform_organisation(organisation_id, readpath, temp_path):
     with h5.File(readpath, 'r') as readfile:
 
@@ -65,8 +122,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
             animal = json.loads(
                 readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
-
-            # TODO: add annotations from animal object
 
             # remove localization -> index is localtime without tzinfo
             # needed so we can have all animal indices in one column
@@ -98,6 +153,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
             data['country'] = country
             data['partner_id'] = partner_id
             data['DIM'] = calculate_dims(data.index, animal)
+            data = calculate_labels(data, animal)
 
             framelist.append(data)
 
