@@ -253,11 +253,12 @@ class DataLoader(object):
             animal_ids = filtered
 
         temp_path = os.path.join(self.store_path, 'temp')
-        os.mkdir(temp_path)
+        if not os.path.exists(temp_path):
+            os.mkdir(temp_path)
 
         print('Loading sensordata...')
 
-        results = [self.thread_pool.submit(
+        results = [self.process_pool.submit(
             download_key, self.dbclient, _id, metrics, from_dt, to_dt,
             temp_path) for _id in animal_ids]
 
