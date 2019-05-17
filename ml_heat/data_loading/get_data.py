@@ -9,6 +9,7 @@ import h5py as h5
 import pandas as pd
 from tqdm import tqdm
 from sxapi import LowLevelAPI, APIv2
+from sxapi.low import PrivateAPIv2
 from anthilldb.settings import LiveConfig
 from anthilldb.client import DirectDBClient
 from anthilldb.commands.downloader import download_key
@@ -24,6 +25,8 @@ PRIVATE_TOKEN = ('i-am-no-longer-a-token')
 PRIVATE_ENDPOINT = 'http://127.0.0.1:8787/internapi/v1/'
 
 PUBLIC_ENDPOINTv2 = 'https://api-staging.smaxtec.com/api/v2/'
+
+PRIVATE_ENDPOINTv2 = 'http://127.0.0.1:8787/internapi/v2/'
 
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
     os.path.join(os.getcwd(), 'key.json'))
@@ -56,6 +59,9 @@ class DataLoader(object):
         self.api = APIv2(
             api_key=PRIVATE_TOKEN, endpoint=PUBLIC_ENDPOINTv2,
             asynchronous=True).low
+
+        self.privateapi = PrivateAPIv2(
+            api_key=PRIVATE_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
 
         self.oldapi = LowLevelAPI(
             api_key=PRIVATE_TOKEN,
@@ -174,16 +180,50 @@ class DataLoader(object):
         if not filtered_orga_ids:
             return
 
-        print('Loading animals')
-        returns = self.api.get_animals_by_organisation_ids_async(
-            filtered_orga_ids)
+        print('Loading animals...')
+        futures = [self.thread_pool.submit(
+                   self.api.get_animals_by_organisation_id,
+                   organisation_id)
+                   for organisation_id in filtered_orga_ids]
 
-        animals = list(zip(*returns))[0]
+        kwargs = {
+            'total': len(futures),
+            'unit': 'organisations',
+            'unit_scale': True,
+            'leave': True
+        }
 
-        # flatten list of lists
-        animals = [inner for outer in animals for inner in outer]
+        for f in tqdm(as_completed(futures), **kwargs):
+            pass
 
-        print('Storing animals')
+        animals = [x for future in futures for x in future.result()]
+
+        print('Loading additional events for animals...')
+        tuple_list = [(animal['_id'], self.thread_pool.submit(
+                       self.privateapi.get_events_by_animal_id,
+                       animal['_id'], True))
+                      for animal in animals]
+
+        if not tuple_list:
+            return
+
+        events = list(zip(*tuple_list))[1]
+
+        kwargs = {
+            'total': len(events),
+            'unit': 'files',
+            'unit_scale': True,
+            'leave': True
+        }
+
+        for f in tqdm(as_completed(events), **kwargs):
+            pass
+
+        event_dict = {
+            tupl[0]: tupl[1].result() for tupl in tuple_list
+        }
+
+        print('Storing animals...')
         with self.writefile() as file:
             if self._animal_orga_map is None:
                 try:
@@ -210,6 +250,13 @@ class DataLoader(object):
                 a_subgroup.create_dataset(
                     name='animal',
                     data=json.dumps(animal))
+
+                if 'events' in a_subgroup.keys():
+                    del a_subgroup['events']
+
+                a_subgroup.create_dataset(
+                    name='events',
+                    data=json.dumps(event_dict[animal['_id']]))
 
             try:
                 lookup_group = file.create_group('lookup')
@@ -248,7 +295,7 @@ class DataLoader(object):
                     for animal_id in animal_ids:
                         a_keys = list(
                             file[f'data/{organisation_id}/{animal_id}'].keys())
-                        if len(a_keys) < 2:
+                        if len(a_keys) < 3:
                             filtered.append(animal_id)
             animal_ids = filtered
 
