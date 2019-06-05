@@ -57,3 +57,9 @@ series = pd.to_datetime(frame.event_ts)
 
 plt.hist(series, 50)
 
+
+# In[ ]:
+
+
+
+
