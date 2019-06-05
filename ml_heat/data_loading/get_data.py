@@ -199,28 +199,34 @@ class DataLoader(object):
         animals = [x for future in futures for x in future.result()]
 
         print('Loading additional events for animals...')
-        tuple_list = [(animal['_id'], self.thread_pool.submit(
-                       self.privateapi.get_events_by_animal_id,
-                       animal['_id'], True))
-                      for animal in animals]
+        tuple_list = []
+        for animal in tqdm(animals):
+            tuple_list.append(
+                (animal['_id'],
+                 self.privateapi.get_events_by_animal_id(animal['_id'], True)))
 
-        if not tuple_list:
-            return
+        # tuple_list = [(animal['_id'], self.thread_pool.submit(
+        #                self.privateapi.get_events_by_animal_id,
+        #                animal['_id'], True))
+        #               for animal in animals]
 
-        events = list(zip(*tuple_list))[1]
+        # if not tuple_list:
+        #     return
 
-        kwargs = {
-            'total': len(events),
-            'unit': 'files',
-            'unit_scale': True,
-            'leave': True
-        }
+        # events = list(zip(*tuple_list))[1]
 
-        for f in tqdm(as_completed(events), **kwargs):
-            pass
+        # kwargs = {
+        #     'total': len(events),
+        #     'unit': 'files',
+        #     'unit_scale': True,
+        #     'leave': True
+        # }
+
+        # for f in tqdm(as_completed(events), **kwargs):
+        #     pass
 
         event_dict = {
-            tupl[0]: tupl[1].result() for tupl in tuple_list
+            tupl[0]: tupl[1] for tupl in tuple_list
         }
 
         print('Storing animals...')
@@ -232,7 +238,7 @@ class DataLoader(object):
                 except Exception:
                     self._animal_orga_map = {}
 
-            for animal in animals:
+            for animal in tqdm(animals):
                 organisation_id = animal['organisation_id']
                 orga_group = file[f'data/{organisation_id}']
 
@@ -368,6 +374,9 @@ class DataLoader(object):
                     frame = pickle.load(file)
                 except EOFError:
                     os.remove(filepath)
+                    continue
+                except Exception as e:
+                    print(e)
                     continue
 
             if frame.empty:
