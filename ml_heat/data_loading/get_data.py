@@ -291,6 +291,8 @@ class DataLoader(object):
         # retrieve animal ids to load data for
         animal_ids = self.animal_ids_for_organisations(organisation_ids)
 
+        temp_path = os.path.join(self.store_path, 'temp')
+
         # determine which datafiles haven't been loaded yet
         if not update:
             filtered = []
@@ -305,7 +307,14 @@ class DataLoader(object):
                             filtered.append(animal_id)
             animal_ids = filtered
 
-        temp_path = os.path.join(self.store_path, 'temp')
+            # check if csv or pickle file exists already
+            if os.path.exists(temp_path):
+                files = os.listdir(temp_path)
+                keys = [string.replace('.csv', '') for string in files]
+                animal_ids = [
+                    animal_id for animal_id in animal_ids
+                    if animal_id not in keys]
+
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
