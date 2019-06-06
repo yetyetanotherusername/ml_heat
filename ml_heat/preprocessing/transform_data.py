@@ -253,6 +253,13 @@ class DataTransformer(object):
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 
+        min_itemsize = 10
+        itemsize_dict = {
+            'race': min_itemsize,
+            'country': min_itemsize,
+            'partner_id': min_itemsize
+        }
+
         with pd.HDFStore(self.train_store_path, complevel=9) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
@@ -265,7 +272,7 @@ class DataTransformer(object):
                 try:
                     train_store.append(
                         key='dataset', value=frame,
-                        min_itemsize={'string': 10})
+                        min_itemsize=itemsize_dict)
                     os.remove(filepath)
                 except KeyError as e:
                     print(e)
