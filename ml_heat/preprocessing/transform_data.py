@@ -106,14 +106,14 @@ def add_features(inframe, organisation, animal):
     # shorten string fields (hdf5 serde has limits on string length)
     race = animal.get('race', 'N/A')
 
-    if len(race) > 9:
+    if len(race) > 10:
         race = [word[0] + '_' for word in animal['race'].split('_')]
         race = ''.join(race)
 
     partner_id = organisation.get('partner_id', 'N/A')
 
-    if len(partner_id) > 9:
-        partner_id = partner_id[:9]
+    if len(partner_id) > 10:
+        partner_id = partner_id[:10]
 
     group_id = animal.get('group_id', 'N/A')
     if group_id is None:
@@ -263,7 +263,9 @@ class DataTransformer(object):
                     continue
 
                 try:
-                    train_store.append(key='dataset', value=frame)
+                    train_store.append(
+                        key='dataset', value=frame,
+                        min_itemsize={'string': 10})
                     os.remove(filepath)
                 except KeyError as e:
                     print(e)
