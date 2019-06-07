@@ -39,8 +39,7 @@ def calculate_dims(index, animal):
     return frame.dims
 
 
-def check_cyclic(inframe, animal):
-    # TODO: filter event type!
+def add_cyclic(inframe, animal):
     # TODO: enforce holdoff
     lifecycle = animal['lifecycle']
     min_timedelta = pd.Timedelta(18, unit='days')
@@ -70,10 +69,11 @@ def check_cyclic(inframe, animal):
         cyclic_rows = cyclic_rows.append(
             frame[frame.cyclic == True], sort=True)  # noqa
 
-    inframe.sort_index(inplace=True)
-
     if cyclic_rows.empty:
         return inframe
+
+    inframe.sort_index(inplace=True)
+
     cyclic_dts = cyclic_rows.event_ts.to_list()
 
     # find indices closest to cyclic heats and set cyclic column to true
@@ -91,6 +91,48 @@ def check_cyclic(inframe, animal):
     return inframe
 
 
+def add_inseminated(inframe, animal):
+    lifecycle = animal['lifecycle']
+
+    insemination_rows = pd.DataFrame()
+    for cycle in lifecycle['cycles']:
+        frame = pd.DataFrame(cycle['events'])
+        if frame.empty:
+            continue
+
+        # filter for relevant event types
+        frame = frame[frame.event_type == 'insemination']
+
+        if frame.empty:
+            continue
+
+        frame.event_ts = pd.to_datetime(
+            frame.event_ts, format=('%Y-%m-%dT%H:%M:%S'))
+
+        insemination_rows = insemination_rows.append(frame, sort=True)
+
+    if insemination_rows.empty:
+        return inframe
+
+    inframe.sort_index(inplace=True)
+
+    insemination_dts = insemination_rows.event_ts.to_list()
+
+    # find indices closest to cyclic heats and set cyclic column to true
+    # if no matching index is found inside tolerance of 24h, disregard
+    for dt in insemination_dts:
+        try:
+            idx = inframe.index.get_loc(
+                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
+        except KeyError:
+            continue
+        except Exception as e:
+            print(e)
+
+        inframe.inseminated.iat[idx] = True
+    return inframe
+
+
 def add_labels(inframe, animal):
     # TODO: fill inseminated, pregnant, deleted columns
 
@@ -101,7 +143,10 @@ def add_labels(inframe, animal):
     inframe['deleted'] = False
 
     # cyclic heat analysis
-    inframe = check_cyclic(inframe, animal)
+    inframe = add_cyclic(inframe, animal)
+
+    # add inseminated heats
+    inframe = add_inseminated(inframe, animal)
 
     return inframe
 
