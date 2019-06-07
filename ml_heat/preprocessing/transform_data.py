@@ -51,6 +51,10 @@ def check_cyclic(inframe, animal):
         frame = pd.DataFrame(cycle['events'])
         if frame.empty:
             continue
+
+        # filter for relevant event types
+        frame = frame[frame.event_type.isin(['heat', 'insemination'])]
+
         rows = len(frame.index)
         columns = [str(x) for x in range(-rows, rows + 1) if x != 0]
         frame.event_ts = pd.to_datetime(
@@ -225,7 +229,7 @@ class DataTransformer(object):
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
-        # for organisation_id in self.organisation_ids:
+        # for organisation_id in tqdm(self.organisation_ids):
         #     transform_organisation(
         #         organisation_id,
         #         self.raw_store_path,

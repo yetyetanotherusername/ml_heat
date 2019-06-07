@@ -205,6 +205,9 @@ class DataLoader(object):
                 (animal['_id'],
                  self.privateapi.get_events_by_animal_id(animal['_id'], True)))
 
+
+        # for some reason parallel loading of events doesn't work reliably,
+        # maybe the API bottlenecks this operation and threads start timing out
         # tuple_list = [(animal['_id'], self.thread_pool.submit(
         #                self.privateapi.get_events_by_animal_id,
         #                animal['_id'], True))
