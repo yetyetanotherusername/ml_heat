@@ -40,7 +40,7 @@ def calculate_dims(index, animal):
 
 
 def add_cyclic(inframe, animal):
-    # TODO: enforce holdoff
+    # TODO: enforce holdoff?
     lifecycle = animal['lifecycle']
     min_timedelta = pd.Timedelta(18, unit='days')
     max_timedelta = pd.Timedelta(24, unit='days')
@@ -133,6 +133,78 @@ def add_inseminated(inframe, animal):
     return inframe
 
 
+def add_pregnant(inframe, animal):
+    # set the pregnant flag when the user confirms an insemination was
+    # successful or when there was a calving 270-290 days after an event
+
+    lifecycle = animal['lifecycle']
+
+    pregnant_ts = []
+    for cycle in lifecycle['cycles']:
+
+        last_calving_date = cycle.get('last_calving_date', None)
+        last_calving_date = pd.to_datetime(
+            last_calving_date, format=('%Y-%m-%dT%H:%M:%S'))
+
+        frame = pd.DataFrame(cycle['events'])
+        if frame.empty:
+            continue
+
+        frame.event_ts = pd.to_datetime(
+            frame.event_ts, format=('%Y-%m-%dT%H:%M:%S'))
+
+        frame.insemination_date = pd.to_datetime(
+            frame.insemination_date, format=('%Y-%m-%dT%H:%M:%S'))
+
+        calving_confirmations = frame[
+            frame.event_type == 'calving_confirmation']
+
+        confirmed_inseminations = frame[
+            frame.event_type == 'pregnancy_result']
+
+        heats = frame[frame.event_type.isin(['heat', 'insemination'])]
+
+        min_td = pd.Timedelta(days=270)
+        max_td = pd.Timedelta(days=290)
+
+        pr_heats = []
+        calving_dt_list = (
+            calving_confirmations.event_ts.to_list() + [last_calving_date])
+
+        calving_dt_list = [
+            calving_dt for calving_dt in calving_dt_list if
+            calving_dt is not None]
+
+        for calving_dt in calving_dt_list:
+            pr_heats += [
+                x for x in heats.event_ts.to_list() if
+                min_td <= calving_dt - x <= max_td]
+
+        pregnant_ts += pr_heats
+        pregnant_ts += confirmed_inseminations.insemination_date.to_list()
+
+    if not pregnant_ts:
+        return inframe
+
+    inframe.sort_index(inplace=True)
+
+    pregnant_ts = sorted(list(set(pregnant_ts)))
+
+    # find indices closest to pregnant heats and set pregnant column to true
+    # if no matching index is found inside tolerance of 24h, disregard
+    for dt in pregnant_ts:
+        try:
+            idx = inframe.index.get_loc(
+                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
+        except KeyError:
+            continue
+        except Exception as e:
+            print(e)
+
+        inframe.pregnant.iat[idx] = True
+    return inframe
+
+
 def add_labels(inframe, animal):
     # TODO: fill inseminated, pregnant, deleted columns
 
@@ -147,6 +219,9 @@ def add_labels(inframe, animal):
 
     # add inseminated heats
     inframe = add_inseminated(inframe, animal)
+
+    # add heats that resulted in a pregnancy
+    inframe = add_pregnant(inframe, animal)
 
     return inframe
 
