@@ -416,14 +416,46 @@ class DataTransformer(object):
             os.remove(self.train_store_path)
 
     def test(self):
+        import matplotlib.pyplot as plt
+
+        organisation_id = '59e7515edb84e482acce8339'
+        group_id = 'N/A'
+        animal_id = '5c3f87f0cf45d75dbb403596'
+
         print('Test: Loading data...')
         frame = pd.read_hdf(self.train_store_path, key='dataset')
 
-        print(
-            frame.loc[(
-                '59e7515edb84e482acce8339',
-                '59e75177575fc94638c1f8e7',
-                '59e75f2b9e182f68cf25721d')])
+        with self.readfile() as file:
+            animal = json.loads(
+                file[f'data/{organisation_id}/'
+                     f'{animal_id}/animal'][()])
+
+        print(animal)
+
+        subframe = frame.loc[(organisation_id, group_id, animal_id)]
+
+        print(subframe)
+
+        cyclic = subframe[subframe.cyclic == True].index.to_list()  # noqa
+        inseminated = subframe[
+            subframe.inseminated == True].index.to_list()  # noqa
+        pregnant = subframe[subframe.pregnant == True].index.to_list()  # noqa
+
+        subframe.plot()
+
+        for x in cyclic:
+            plt.axvline(x, color='r', linstyle='--', label='cyclic heats')
+
+        for x in inseminated:
+            plt.axvline(x, color='r', linestyle='-.',
+                        label='inseminated heats')
+
+        for x in pregnant:
+            plt.axvline(x, color='r', label='pregnant heats')
+
+        plt.legend()
+        plt.grid()
+        plt.show()
 
     def run(self):
         self.clear_data()
