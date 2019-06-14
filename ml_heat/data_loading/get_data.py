@@ -39,8 +39,6 @@ def parse_csv(filepath, timezone):
             date_parser=lambda col: pd.to_datetime(col, utc=True))
     except pd.errors.EmptyDataError:
         os.remove(filepath)
-    except Exception as e:
-        print(e)
 
     frame = frame.tz_convert(timezone)
 
@@ -134,8 +132,6 @@ class DataLoader(object):
             return self._animal_orga_map[animal_id]
         except KeyError:
             return None
-        except Exception as e:
-            print(e)
 
     def load_organisations(self, update=False):
         # TODO: switch to apiv2 or anthilldb once implemented
@@ -385,9 +381,6 @@ class DataLoader(object):
                     frame = pickle.load(file)
                 except EOFError:
                     os.remove(filepath)
-                    continue
-                except Exception as e:
-                    print(e)
                     continue
 
             if frame.empty:

@@ -79,13 +79,12 @@ def add_cyclic(inframe, animal):
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
     for dt in cyclic_dts:
+        idx = None
         try:
             idx = inframe.index.get_loc(
                 dt, method='nearest', tolerance=pd.Timedelta(hours=24))
         except KeyError:
             continue
-        except Exception as e:
-            print(e)
 
         inframe.cyclic.iat[idx] = True
     return inframe
@@ -121,13 +120,12 @@ def add_inseminated(inframe, animal):
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
     for dt in insemination_dts:
+        idx = None
         try:
             idx = inframe.index.get_loc(
                 dt, method='nearest', tolerance=pd.Timedelta(hours=24))
         except KeyError:
             continue
-        except Exception as e:
-            print(e)
 
         inframe.inseminated.iat[idx] = True
     return inframe
@@ -193,13 +191,12 @@ def add_pregnant(inframe, animal):
     # find indices closest to pregnant heats and set pregnant column to true
     # if no matching index is found inside tolerance of 24h, disregard
     for dt in pregnant_ts:
+        idx = None
         try:
             idx = inframe.index.get_loc(
                 dt, method='nearest', tolerance=pd.Timedelta(hours=24))
         except KeyError:
             continue
-        except Exception as e:
-            print(e)
 
         inframe.pregnant.iat[idx] = True
     return inframe
@@ -229,12 +226,16 @@ def add_labels(inframe, animal):
 def add_features(inframe, organisation, animal):
     # shorten string fields (hdf5 serde has limits on string length)
     race = animal.get('race', 'N/A')
+    if race is None:
+        race = 'N/A'
 
     if len(race) > 10:
         race = [word[0] + '_' for word in animal['race'].split('_')]
         race = ''.join(race)
 
     partner_id = organisation.get('partner_id', 'N/A')
+    if partner_id is None:
+        partner_id = 'N/A'
 
     if len(partner_id) > 10:
         partner_id = partner_id[:10]
@@ -265,8 +266,6 @@ def transform_animal(organisation, animal_id, readpath, readfile):
             key=f'data/{organisation_id}/{animal_id}/sensordata')
     except KeyError:
         return None
-    except Exception as e:
-        print(e)
 
     if data.empty:
         return None
@@ -277,6 +276,8 @@ def transform_animal(organisation, animal_id, readpath, readfile):
     # remove localization -> index is localtime without tzinfo
     # needed so we can have all animal indices in one column
     data = data.tz_localize(None)
+    # drop duplicates in index resulting from DST switch
+    data = data[~data.index.duplicated(keep='first')]
 
     # calculate all features and add them as columns
     data = add_features(data, organisation, animal)
