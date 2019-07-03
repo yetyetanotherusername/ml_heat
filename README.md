@@ -1,16 +1,27 @@
-## ml-heat
+# Machine Learning assisted heat detection
 
-# create virtual environment
+## Setup
+
+Create virtual environment
+```
 python3 -m venv .env
-
-# activate virtual environment
+```
+Activate virtual environment
+```
 source .env/bin/activate
-
-# install dependencies
+```
+Install dependencies
+```
 pip install -Ur requirements.txt
+```
 
-# download data
+## Download & prepare date for machine learning
+
+Download data
+```
 python ml_heat/data_loading/get_data.py
-
-# perform preprocessing
+```
+Perform preprocessing & data cleaning
+```
 python ml_heat/preprocessing/transform_data.py
+```
