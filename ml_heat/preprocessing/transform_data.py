@@ -202,9 +202,41 @@ def add_pregnant(inframe, animal):
     return inframe
 
 
-def add_labels(inframe, animal):
-    # TODO: fill inseminated, pregnant, deleted columns
+def add_deleted(inframe, animal, events):
+    frame = pd.DataFrame(events)
+    frame = frame[frame.event_type == 'actincrease_704']
+    detected_heats = pd.to_datetime(
+        frame.event_ts, format=('%Y-%m-%dT%H:%M:%S')).to_list()
 
+    lifecycle = animal['lifecycle']
+
+    for cycle in lifecycle['cycles']:
+        frame = pd.DataFrame(cycle['events'])
+
+        if frame.empty:
+            continue
+
+        frame = frame[frame.event_type == 'heat']
+        undeleted_heats = pd.to_datetime(
+            frame.event_ts, format=('%Y-%m-%dT%H:%M:%S')).to_list()
+
+        for undeleted in undeleted_heats:
+            if undeleted in detected_heats:
+                detected_heats.remove(undeleted)
+
+    for dt in detected_heats:
+        idx = None
+        try:
+            idx = inframe.index.get_loc(
+                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
+        except KeyError:
+            continue
+
+        inframe.deleted.iat[idx] = True
+    return inframe
+
+
+def add_labels(inframe, animal, events):
     # add label columns to frame
     inframe['cyclic'] = False
     inframe['inseminated'] = False
@@ -219,6 +251,9 @@ def add_labels(inframe, animal):
 
     # add heats that resulted in a pregnancy
     inframe = add_pregnant(inframe, animal)
+
+    # add heats deleted by the user
+    inframe = add_deleted(inframe, animal, events)
 
     return inframe
 
@@ -272,17 +307,21 @@ def transform_animal(organisation, animal_id, readpath, readfile):
 
     animal = json.loads(
         readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
+    events = json.loads(
+        readfile[f'data/{organisation_id}/{animal_id}/events'][()])
 
     # remove localization -> index is localtime without tzinfo
     # needed so we can have all animal indices in one column
     data = data.tz_localize(None)
+
     # drop duplicates in index resulting from DST switch
     data = data[~data.index.duplicated(keep='first')]
 
     # calculate all features and add them as columns
     data = add_features(data, organisation, animal)
+
     # calculate labels and add them as columns
-    data = add_labels(data, animal)
+    data = add_labels(data, animal, events)
 
     return data
 
@@ -351,6 +390,7 @@ class DataTransformer(object):
             os.mkdir(temp_path)
 
         # for organisation_id in tqdm(self.organisation_ids):
+        #     print(organisation_id)
         #     transform_organisation(
         #         organisation_id,
         #         self.raw_store_path,
@@ -432,7 +472,6 @@ class DataTransformer(object):
                      f'{animal_id}/animal'][()])
 
         print(animal)
-
         subframe = frame.loc[(organisation_id, group_id, animal_id)]
 
         print(subframe)
@@ -441,6 +480,7 @@ class DataTransformer(object):
         inseminated = subframe[
             subframe.inseminated == True].index.to_list()  # noqa
         pregnant = subframe[subframe.pregnant == True].index.to_list()  # noqa
+        deleted = subframe[subframe.deleted == True].index.to_list()  # noqa
 
         subframe.plot()
 
@@ -454,6 +494,9 @@ class DataTransformer(object):
         for x in pregnant:
             plt.axvline(x, color='r', label='pregnant heats')
 
+        for x in deleted:
+            plt.axvline(x, color='r', label='deleted heats')
+
         plt.legend()
         plt.grid()
         plt.show()
@@ -466,7 +509,8 @@ class DataTransformer(object):
 
 
 def main():
-    transformer = DataTransformer()
+    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    # transformer = DataTransformer()
     transformer.run()
 
 
