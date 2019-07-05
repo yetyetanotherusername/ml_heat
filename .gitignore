@@ -4,9 +4,15 @@
 # special folders
 __*__
 
+# special files
+key.json
+token.json
+
 # editor stuff
 *.sublime-project
 *.sublime-workspace
 
 # jupyter
 **/.ipynb_checkpoints
+
+

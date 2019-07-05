@@ -15,7 +15,7 @@ Install dependencies
 pip install -Ur requirements.txt
 ```
 
-## Download & prepare date for machine learning
+## Download & prepare data for machine learning
 
 Download data
 ```

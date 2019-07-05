@@ -20,7 +20,10 @@ from concurrent.futures import (
     as_completed
 )
 
-PRIVATE_TOKEN = ('i-am-no-longer-a-token')
+with open(os.path.abspath(os.path.join(os.getcwd(), 'token.json'))) as file:
+    token_string = json.load(file)['staging']
+
+PRIVATE_TOKEN = token_string
 
 PRIVATE_ENDPOINT = 'http://127.0.0.1:8787/internapi/v1/'
 
