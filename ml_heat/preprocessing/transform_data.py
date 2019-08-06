@@ -293,6 +293,31 @@ def add_features(inframe, organisation, animal):
     return inframe
 
 
+def add_group_feature(inframe):
+    # inframe['act_group_mean'] = float('nan')
+    frame = inframe['act'].copy(deep=True)
+    frame = frame.drop(index='N/A', level=1)
+
+    # make animal id a column index
+    frame = frame.unstack('animal_id')
+    frame = frame.sort_index()
+
+    # calculate the mean of all groups in 10 minute bins
+    group_mean = frame.reset_index(
+        ['organisation_id', 'group_id']).groupby(
+            ['organisation_id', 'group_id', pd.Grouper(
+                freq='10T', level='datetime')]).mean().mean(axis=1)
+
+    group_mean.rename('act_group_mean', inplace=True)
+    frame = pd.concat([frame, group_mean], axis=1)
+
+    frame.act_group_mean.fillna(method='ffill', inplace=True)
+
+    print(frame)
+    assert False
+    return inframe
+
+
 def transform_animal(organisation, animal_id, readpath, readfile):
     organisation_id = organisation['_id']
     try:
@@ -356,6 +381,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     frame = frame.sort_index()
 
+    frame = add_group_feature(frame)
+
     write_path = os.path.join(temp_path, organisation_id)
     with open(write_path, 'wb') as writefile:
         pickle.dump(frame, writefile)
@@ -389,26 +416,26 @@ class DataTransformer(object):
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
-        # for organisation_id in tqdm(self.organisation_ids):
-        #     print(organisation_id)
-        #     transform_organisation(
-        #         organisation_id,
-        #         self.raw_store_path,
-        #         temp_path)
+        for organisation_id in tqdm(self.organisation_ids):
+            print(organisation_id)
+            transform_organisation(
+                organisation_id,
+                self.raw_store_path,
+                temp_path)
 
-        results = [self.process_pool.submit(
-            transform_organisation, _id, self.raw_store_path, temp_path)
-            for _id in self.organisation_ids]
+        # results = [self.process_pool.submit(
+        #     transform_organisation, _id, self.raw_store_path, temp_path)
+        #     for _id in self.organisation_ids]
 
-        kwargs = {
-            'total': len(results),
-            'unit': 'organisations',
-            'unit_scale': True,
-            'leave': True
-        }
+        # kwargs = {
+        #     'total': len(results),
+        #     'unit': 'organisations',
+        #     'unit_scale': True,
+        #     'leave': True
+        # }
 
-        for f in tqdm(as_completed(results), **kwargs):
-            pass
+        # for f in tqdm(as_completed(results), **kwargs):
+        #     pass
 
         print('Transformation finished')
 
