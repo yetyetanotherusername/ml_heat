@@ -311,10 +311,28 @@ def add_group_feature(inframe):
     group_mean.rename('act_group_mean', inplace=True)
     frame = pd.concat([frame, group_mean], axis=1)
 
+    # save group mean separately
     frame.act_group_mean.fillna(method='ffill', inplace=True)
+    group_mean = frame.act_group_mean.copy(deep=True)
+    frame.drop('act_group_mean', inplace=True, axis=1)
 
-    print(frame)
-    assert False
+    # create multilevel column index and add group mean to each animal
+    frame.columns = [frame.columns, ['act'] * len(frame.columns)]
+    frame = frame.stack(level=0, dropna=False)
+    frame.index.rename(
+        ['organisation_id', 'group_id', 'datetime', 'animal_id'], inplace=True)
+    frame['act_group_mean'] = float('nan')
+    frame = frame.unstack('animal_id').swaplevel(
+        axis=1).sort_index().sort_index(axis=1)
+    frame.loc[(slice(None), slice(None), slice(None)),
+              (slice(None), 'act_group_mean')] = group_mean
+
+    # recreate original dataframe with all animals in one column
+    frame = frame.stack('animal_id', dropna=False).swaplevel().sort_index()
+    frame.dropna(subset=['act'], inplace=True)
+
+    inframe = pd.concat([inframe, frame.act_group_mean], axis=1)
+
     return inframe
 
 
@@ -416,26 +434,26 @@ class DataTransformer(object):
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
-        for organisation_id in tqdm(self.organisation_ids):
-            print(organisation_id)
-            transform_organisation(
-                organisation_id,
-                self.raw_store_path,
-                temp_path)
+        # for organisation_id in tqdm(self.organisation_ids):
+        #     print(organisation_id)
+        #     transform_organisation(
+        #         organisation_id,
+        #         self.raw_store_path,
+        #         temp_path)
 
-        # results = [self.process_pool.submit(
-        #     transform_organisation, _id, self.raw_store_path, temp_path)
-        #     for _id in self.organisation_ids]
+        results = [self.process_pool.submit(
+            transform_organisation, _id, self.raw_store_path, temp_path)
+            for _id in self.organisation_ids]
 
-        # kwargs = {
-        #     'total': len(results),
-        #     'unit': 'organisations',
-        #     'unit_scale': True,
-        #     'leave': True
-        # }
+        kwargs = {
+            'total': len(results),
+            'unit': 'organisations',
+            'unit_scale': True,
+            'leave': True
+        }
 
-        # for f in tqdm(as_completed(results), **kwargs):
-        #     pass
+        for f in tqdm(as_completed(results), **kwargs):
+            pass
 
         print('Transformation finished')
 
@@ -455,6 +473,7 @@ class DataTransformer(object):
         with pd.HDFStore(self.train_store_path, complevel=9) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
+                    file.seek(0)  # catch offset not being at the beginning
                     frame = pickle.load(file)
 
                 if frame.empty:
@@ -536,8 +555,8 @@ class DataTransformer(object):
 
 
 def main():
-    transformer = DataTransformer(['59e7515edb84e482acce8339'])
-    # transformer = DataTransformer()
+    # transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    transformer = DataTransformer()
     transformer.run()
 
 
