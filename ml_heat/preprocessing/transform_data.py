@@ -473,7 +473,6 @@ class DataTransformer(object):
         with pd.HDFStore(self.train_store_path, complevel=9) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
-                    file.seek(0)  # catch offset not being at the beginning
                     frame = pickle.load(file)
 
                 if frame.empty:
