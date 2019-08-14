@@ -17,7 +17,7 @@ pip install -Ur requirements.txt
 
 ## Download & prepare data for machine learning
 
-Download data
+Download rawdata (only possible with developer access to smaxtec google cloud)
 ```
 python ml_heat/data_loading/get_data.py
 ```

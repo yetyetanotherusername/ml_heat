@@ -150,6 +150,8 @@ class DataLoader(object):
 
                 print('Storing organisations to local cache')
                 for organisation in organisations:
+                    # anonymization
+                    organisation = self.sanitize_organisation(organisation)
                     try:
                         orga_group = data_group.create_group(
                             name=organisation['_id'])
@@ -409,6 +411,11 @@ class DataLoader(object):
             organisation_ids=organisation_ids, update=update)
         self.csv_to_pickle()
         self.pickle_to_hdf()
+
+    def sanitize_organisation(self, organisation):
+        organisation.pop('name', None)
+        organisation.pop('account', None)
+        return organisation
 
 
 def main():

@@ -417,8 +417,8 @@ class DataTransformer(object):
 
         self.process_pool = ProcessPoolExecutor(os.cpu_count())
 
-    def readfile(self):
-        return h5.File(self.raw_store_path, 'r')
+    def readfile(self, how='r'):
+        return h5.File(self.raw_store_path, how)
 
     @property
     def organisation_ids(self):
@@ -501,56 +501,80 @@ class DataTransformer(object):
         if os.path.exists(self.train_store_path):
             os.remove(self.train_store_path)
 
+    def sanitize_data(self):
+        organisation_ids = self.organisation_ids
+
+        for organisation_id in tqdm(organisation_ids):
+            with self.readfile() as file:
+                organisation = json.loads(
+                    file[f'data/{organisation_id}/organisation'][()])
+
+            organisation.pop('account', None)
+            organisation.pop('name', None)
+
+            with self.readfile('a') as file:
+                orga_group = file[f'data/{organisation_id}']
+                del orga_group['organisation']
+
+                orga_group.create_dataset(
+                    name='organisation',
+                    data=json.dumps(organisation))
+
     def test(self):
         import matplotlib.pyplot as plt
 
         organisation_id = '59e7515edb84e482acce8339'
-        group_id = 'N/A'
-        animal_id = '5c3f87f0cf45d75dbb403596'
 
         print('Test: Loading data...')
         frame = pd.read_hdf(self.train_store_path, key='dataset')
 
+        frame = frame.loc[
+            (organisation_id, slice(None), slice(None))].reset_index(
+                'group_id', drop=True)
+
+        animal_ids = list(set(frame.index.get_level_values('animal_id')))
+
         with self.readfile() as file:
-            animal = json.loads(
-                file[f'data/{organisation_id}/'
-                     f'{animal_id}/animal'][()])
+            for animal_id in animal_ids[0:10]:
 
-        print(animal)
-        subframe = frame.loc[(organisation_id, group_id, animal_id)]
+                animal = json.loads(
+                    file[f'data/{organisation_id}/'
+                         f'{animal_id}/animal'][()])
 
-        print(subframe)
+                subframe = frame.loc[(animal_id)]
 
-        cyclic = subframe[subframe.cyclic == True].index.to_list()  # noqa
-        inseminated = subframe[
-            subframe.inseminated == True].index.to_list()  # noqa
-        pregnant = subframe[subframe.pregnant == True].index.to_list()  # noqa
-        deleted = subframe[subframe.deleted == True].index.to_list()  # noqa
+                cyclic = subframe[subframe.cyclic == True].index.to_list()  # noqa
+                inseminated = subframe[
+                    subframe.inseminated == True].index.to_list()  # noqa
+                pregnant = subframe[subframe.pregnant == True].index.to_list()  # noqa
+                deleted = subframe[subframe.deleted == True].index.to_list()  # noqa
 
-        subframe.plot()
+                subframe.plot()
 
-        for x in cyclic:
-            plt.axvline(x, color='r', linstyle='--', label='cyclic heats')
+                for x in cyclic:
+                    plt.axvline(x, color='g', linestyle='--',
+                                label='cyclic heats')
 
-        for x in inseminated:
-            plt.axvline(x, color='r', linestyle='-.',
-                        label='inseminated heats')
+                for x in inseminated:
+                    plt.axvline(x, color='g', linestyle='-.',
+                                label='inseminated heats')
 
-        for x in pregnant:
-            plt.axvline(x, color='r', label='pregnant heats')
+                for x in pregnant:
+                    plt.axvline(x, color='y', label='pregnant heats')
 
-        for x in deleted:
-            plt.axvline(x, color='r', label='deleted heats')
+                for x in deleted:
+                    plt.axvline(x, color='r', label='deleted heats')
 
-        plt.legend()
-        plt.grid()
+                plt.legend()
+                plt.grid()
+
         plt.show()
 
     def run(self):
         self.clear_data()
         self.transform_data()
         self.store_data()
-        self.test()
+        # self.test()
 
 
 def main():
