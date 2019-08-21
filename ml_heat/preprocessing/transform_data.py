@@ -296,11 +296,10 @@ def add_features(inframe, organisation, animal):
 def add_group_feature(inframe):
     # inframe['act_group_mean'] = float('nan')
     frame = inframe['act'].copy(deep=True)
-    frame = frame.drop(index='N/A', level=1)
+    frame.drop(index='N/A', level=1, inplace=True)
 
     # make animal id a column index
-    frame = frame.unstack('animal_id')
-    frame = frame.sort_index()
+    frame = frame.unstack('animal_id').sort_index()
 
     # group into 10 minute bins
     grouped = frame.reset_index(
@@ -311,9 +310,11 @@ def add_group_feature(inframe):
     # include only if there are enough values available for mean
     count = grouped.count(axis=1)
     grouped = grouped[count >= 5]
+    del count
 
     # calculate the mean of all groups in 10 minute bins
     group_mean = grouped.mean(axis=1)
+    del grouped
 
     group_mean.rename('act_group_mean', inplace=True)
     frame = pd.concat([frame, group_mean], axis=1)
@@ -333,6 +334,7 @@ def add_group_feature(inframe):
         axis=1).sort_index().sort_index(axis=1)
     frame.loc[(slice(None), slice(None), slice(None)),
               (slice(None), 'act_group_mean')] = group_mean
+    del group_mean
 
     # recreate original dataframe with all animals in one column
     frame = frame.stack('animal_id', dropna=False).swaplevel().sort_index()
