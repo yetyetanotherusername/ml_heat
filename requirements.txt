@@ -4,11 +4,11 @@ pandas
 numpy
 scipy
 scikit-learn
-tensorflow
-keras
+# tensorflow
+# keras
 matplotlib
 tables
-marshmallow
+marshmallow<3.0
 jupyterlab
 ipympl
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi

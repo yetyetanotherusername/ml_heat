@@ -302,11 +302,18 @@ def add_group_feature(inframe):
     frame = frame.unstack('animal_id')
     frame = frame.sort_index()
 
-    # calculate the mean of all groups in 10 minute bins
-    group_mean = frame.reset_index(
+    # group into 10 minute bins
+    grouped = frame.reset_index(
         ['organisation_id', 'group_id']).groupby(
             ['organisation_id', 'group_id', pd.Grouper(
-                freq='10T', level='datetime')]).mean().mean(axis=1)
+                freq='10T', level='datetime')]).mean()
+
+    # include only if there are enough values available for mean
+    count = grouped.count(axis=1)
+    grouped = grouped[count >= 5]
+
+    # calculate the mean of all groups in 10 minute bins
+    group_mean = grouped.mean(axis=1)
 
     group_mean.rename('act_group_mean', inplace=True)
     frame = pd.concat([frame, group_mean], axis=1)
