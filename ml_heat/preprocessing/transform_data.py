@@ -78,15 +78,17 @@ def add_cyclic(inframe, animal):
 
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
+    span = pd.Timedelta(hours=12)
     for dt in cyclic_dts:
         idx = None
+        from_dt = dt - span
+        to_dt = dt + span
         try:
-            idx = inframe.index.get_loc(
-                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
-        except KeyError:
+            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+        except ValueError:
             continue
 
-        inframe.cyclic.iat[idx] = True
+        inframe.cyclic.at[idx] = True
     return inframe
 
 
@@ -119,15 +121,17 @@ def add_inseminated(inframe, animal):
 
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
+    span = pd.Timedelta(hours=12)
     for dt in insemination_dts:
         idx = None
+        from_dt = dt - span
+        to_dt = dt + span
         try:
-            idx = inframe.index.get_loc(
-                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
-        except KeyError:
+            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+        except ValueError:
             continue
 
-        inframe.inseminated.iat[idx] = True
+        inframe.inseminated.at[idx] = True
     return inframe
 
 
@@ -190,15 +194,17 @@ def add_pregnant(inframe, animal):
 
     # find indices closest to pregnant heats and set pregnant column to true
     # if no matching index is found inside tolerance of 24h, disregard
+    span = pd.Timedelta(hours=12)
     for dt in pregnant_ts:
         idx = None
+        from_dt = dt - span
+        to_dt = dt + span
         try:
-            idx = inframe.index.get_loc(
-                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
-        except KeyError:
+            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+        except ValueError:
             continue
 
-        inframe.pregnant.iat[idx] = True
+        inframe.pregnant.at[idx] = True
     return inframe
 
 
@@ -224,15 +230,17 @@ def add_deleted(inframe, animal, events):
             if undeleted in detected_heats:
                 detected_heats.remove(undeleted)
 
+    span = pd.Timedelta(hours=12)
     for dt in detected_heats:
         idx = None
+        from_dt = dt - span
+        to_dt = dt + span
         try:
-            idx = inframe.index.get_loc(
-                dt, method='nearest', tolerance=pd.Timedelta(hours=24))
-        except KeyError:
+            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+        except ValueError:
             continue
 
-        inframe.deleted.iat[idx] = True
+        inframe.deleted.at[idx] = True
     return inframe
 
 
