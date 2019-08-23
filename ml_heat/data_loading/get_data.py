@@ -170,6 +170,7 @@ class DataLoader(object):
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
 
+        filtered_orga_ids = None
         if not update:
             with self.readfile() as file:
                 keys = file['data'].keys()
@@ -178,8 +179,11 @@ class DataLoader(object):
 
             filtered_orga_ids = [x for x in organisation_ids if x not in keys]
 
-        if not filtered_orga_ids:
-            return
+        if not filtered_orga_ids or filtered_orga_ids is None:
+            if not update:
+                return
+            else:
+                filtered_orga_ids = organisation_ids
 
         print('Loading animals...')
         futures = [self.thread_pool.submit(
