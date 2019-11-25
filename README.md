@@ -14,6 +14,15 @@ Install dependencies
 ```
 pip install -Ur requirements.txt
 ```
+Run setup.py in develop mode
+```
+python setup.py develop
+```
+
+## Run Tests
+```
+pytest tests/
+```
 
 ## Download & prepare data for machine learning
 

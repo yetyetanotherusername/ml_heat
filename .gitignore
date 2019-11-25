@@ -15,4 +15,7 @@ token.json
 # jupyter
 **/.ipynb_checkpoints
 
+# python egg files
+*.egg
+*.egg-info
 

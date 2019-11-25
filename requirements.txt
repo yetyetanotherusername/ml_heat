@@ -11,6 +11,7 @@ tables
 marshmallow<3.0
 jupyterlab
 ipympl
+pytest
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
 -e git+https://github.com/wuttem/cdb_ext.git#egg=cdb_ext
 -e git://github.com/wuttem/cattledb.git#egg=cattledb
