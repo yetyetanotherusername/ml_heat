@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from ml_heat.data_loading.get_data import(
+from ml_heat.data_loading.get_data import (
     parse_csv,
     DataLoader
 )
