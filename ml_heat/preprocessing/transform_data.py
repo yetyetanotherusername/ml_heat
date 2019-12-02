@@ -84,7 +84,8 @@ def add_cyclic(inframe, animal):
         from_dt = dt - span
         to_dt = dt + span
         try:
-            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+            idx = inframe.loc[
+                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
         except ValueError:
             continue
 
@@ -127,7 +128,8 @@ def add_inseminated(inframe, animal):
         from_dt = dt - span
         to_dt = dt + span
         try:
-            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+            idx = inframe.loc[
+                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
         except ValueError:
             continue
 
@@ -200,7 +202,8 @@ def add_pregnant(inframe, animal):
         from_dt = dt - span
         to_dt = dt + span
         try:
-            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+            idx = inframe.loc[
+                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
         except ValueError:
             continue
 
@@ -236,7 +239,8 @@ def add_deleted(inframe, animal, events):
         from_dt = dt - span
         to_dt = dt + span
         try:
-            idx = inframe.loc[from_dt:to_dt, 'act'].idxmax()
+            idx = inframe.loc[
+                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
         except ValueError:
             continue
 
@@ -487,7 +491,7 @@ class DataTransformer(object):
             'partner_id': min_itemsize
         }
 
-        with pd.HDFStore(self.train_store_path, complevel=9) as train_store:
+        with pd.HDFStore(self.train_store_path) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
                     frame = pickle.load(file)
@@ -543,11 +547,12 @@ class DataTransformer(object):
         organisation_id = '59e7515edb84e482acce8339'
 
         print('Test: Loading data...')
-        frame = pd.read_hdf(self.train_store_path, key='dataset')
+        frame = pd.read_hdf(
+            self.train_store_path,
+            key='dataset',
+            where=f'organisation_id={organisation_id}')
 
-        frame = frame.loc[
-            (organisation_id, slice(None), slice(None))].reset_index(
-                'group_id', drop=True)
+        frame = frame.reset_index('group_id', drop=True)
 
         animal_ids = list(set(frame.index.get_level_values('animal_id')))
 
@@ -568,19 +573,38 @@ class DataTransformer(object):
 
                 subframe.plot()
 
+                td = pd.Timedelta(hours=4)
                 for x in cyclic:
-                    plt.axvline(x, color='g', linestyle='--',
-                                label='cyclic heats')
+                    xmin = x - td
+                    xmax = x + td
+                    plt.axvspan(
+                        xmin, xmax, color='g', alpha=0.5,
+                        label='cyclic heats'
+                    )
 
                 for x in inseminated:
-                    plt.axvline(x, color='g', linestyle='-.',
-                                label='inseminated heats')
+                    xmin = x - td
+                    xmax = x + td
+                    plt.axvspan(
+                        xmin, xmax, color='y', alpha=0.5,
+                        label='inseminated heats'
+                    )
 
                 for x in pregnant:
-                    plt.axvline(x, color='y', label='pregnant heats')
+                    xmin = x - td
+                    xmax = x + td
+                    plt.axvspan(
+                        xmin, xmax, color='b', alpha=0.5,
+                        label='pregnant heats'
+                    )
 
                 for x in deleted:
-                    plt.axvline(x, color='r', label='deleted heats')
+                    xmin = x - td
+                    xmax = x + td
+                    plt.axvspan(
+                        xmin, xmax, color='r', alpha=0.5,
+                        label='deleted heats'
+                    )
 
                 plt.legend()
                 plt.grid()

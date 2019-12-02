@@ -3,7 +3,6 @@
 
 import os
 import json
-import pickle
 import datetime
 import h5py as h5
 import pandas as pd
@@ -21,13 +20,17 @@ from concurrent.futures import (
 )
 
 with open(os.path.abspath(os.path.join(os.getcwd(), 'token.json'))) as file:
-    token_string = json.load(file)['staging']
+    doc = json.load(file)
+    live_token_string = doc['live']
+    staging_token_string = doc['staging']
 
-PRIVATE_TOKEN = token_string
+PRIVATE_STAGING_TOKEN = staging_token_string
+
+PRIVATE_LIVE_TOKEN = live_token_string
 
 PRIVATE_ENDPOINT = 'http://127.0.0.1:8787/internapi/v1/'
 
-PUBLIC_ENDPOINTv2 = 'https://api-staging.smaxtec.com/api/v2/'
+PUBLIC_ENDPOINTv2 = 'https://api.smaxtec.com/api/v2/'
 
 PRIVATE_ENDPOINTv2 = 'http://127.0.0.1:8787/internapi/v2/'
 
@@ -51,21 +54,20 @@ def parse_csv(filepath, timezone):
         return
 
     writepath = filepath.replace('.csv', '')
-    with open(writepath, 'wb') as file:
-        pickle.dump(frame, file)
+    frame.to_hdf(writepath)
 
 
 class DataLoader(object):
     def __init__(self):
         self.api = APIv2(
-            api_key=PRIVATE_TOKEN, endpoint=PUBLIC_ENDPOINTv2,
+            api_key=PRIVATE_LIVE_TOKEN, endpoint=PUBLIC_ENDPOINTv2,
             asynchronous=True).low
 
         self.privateapi = PrivateAPIv2(
-            api_key=PRIVATE_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
+            api_key=PRIVATE_STAGING_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
 
         self.oldapi = LowLevelAPI(
-            api_key=PRIVATE_TOKEN,
+            api_key=PRIVATE_STAGING_TOKEN,
             private_endpoint=PRIVATE_ENDPOINT).privatelow
 
         self.dbclient = DirectDBClient(
@@ -341,7 +343,7 @@ class DataLoader(object):
 
         print('Download finished...')
 
-    def csv_to_pickle(self):
+    def csv_to_temp_hdf(self):
         print('Processing data into storage format...')
 
         temp_path = os.path.join(self.store_path, 'temp')
@@ -373,7 +375,7 @@ class DataLoader(object):
 
         print('Processing finished...')
 
-    def pickle_to_hdf(self):
+    def combine_to_hdf(self):
         print('Writing data to hdf file...')
 
         temp_path = os.path.join(self.store_path, 'temp')
@@ -384,12 +386,7 @@ class DataLoader(object):
             animal_id = filepath.split('/')[-1]
             organisation_id = self.organisation_id_for_animal_id(animal_id)
 
-            with open(filepath, 'rb') as file:
-                try:
-                    frame = pickle.load(file)
-                except EOFError:
-                    os.remove(filepath)
-                    continue
+            frame = pd.read_hdf(filepath)
 
             if frame.empty:
                 os.remove(filepath)
@@ -412,8 +409,8 @@ class DataLoader(object):
         self.load_animals(organisation_ids=organisation_ids, update=update)
         self.load_sensordata_from_db(
             organisation_ids=organisation_ids, update=update)
-        self.csv_to_pickle()
-        self.pickle_to_hdf()
+        self.csv_to_temp_hdf()
+        self.combine_to_hdf()
 
     def sanitize_organisation(self, organisation):
         organisation.pop('name', None)
