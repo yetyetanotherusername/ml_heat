@@ -308,7 +308,7 @@ def add_features(inframe, organisation, animal):
 def add_group_feature(inframe):
     # inframe['act_group_mean'] = float('nan')
     frame = inframe['act'].copy(deep=True)
-    frame.drop(index='N/A', level=1, inplace=True)
+    frame = frame.drop(index='N/A', level=1)
 
     # make animal id a column index
     frame = frame.unstack('animal_id').sort_index()
@@ -320,38 +320,35 @@ def add_group_feature(inframe):
                 freq='10T', level='datetime')]).mean()
 
     # include only if there are enough values available for mean
-    count = grouped.count(axis=1)
-    grouped = grouped[count >= 5]
-    del count
+    grouped = grouped[grouped.count(axis=1) >= 5]
 
     # calculate the mean of all groups in 10 minute bins
     group_mean = grouped.mean(axis=1)
     del grouped
 
-    group_mean.rename('act_group_mean', inplace=True)
+    group_mean = group_mean.rename('act_group_mean')
     frame = pd.concat([frame, group_mean], axis=1)
 
     # save group mean separately
-    frame.act_group_mean.fillna(method='ffill', inplace=True)
+    frame.act_group_mean = frame.act_group_mean.fillna(method='ffill')
     group_mean = frame.act_group_mean.copy(deep=True)
-    frame.drop('act_group_mean', inplace=True, axis=1)
+    frame = frame.drop('act_group_mean', axis=1)
 
     # create multilevel column index and add group mean to each animal
     frame.columns = [frame.columns, ['act'] * len(frame.columns)]
     frame = frame.stack(level=0, dropna=False)
-    frame.index.rename(
-        ['organisation_id', 'group_id', 'datetime', 'animal_id'], inplace=True)
+    frame.index = frame.index.rename(
+        ['organisation_id', 'group_id', 'datetime', 'animal_id'])
     frame['act_group_mean'] = float('nan')
-    frame = frame.unstack('animal_id').swaplevel(
-        axis=1).sort_index().sort_index(axis=1)
+    frame = frame.unstack('animal_id')
+    frame = frame.swaplevel(axis=1).sort_index().sort_index(axis=1)
     frame.loc[(slice(None), slice(None), slice(None)),
               (slice(None), 'act_group_mean')] = group_mean
     del group_mean
 
     # recreate original dataframe with all animals in one column
-    frame = frame.stack('animal_id', dropna=False).swaplevel().sort_index()
-    frame.dropna(subset=['act'], inplace=True)
-
+    frame = frame.stack('animal_id', dropna=False)
+    frame = frame.swaplevel().dropna(subset=['act']).sort_index()
     inframe = pd.concat([inframe, frame.act_group_mean], axis=1)
 
     return inframe
@@ -547,12 +544,15 @@ class DataTransformer(object):
         organisation_id = '59e7515edb84e482acce8339'
 
         print('Test: Loading data...')
+
         frame = pd.read_hdf(
             self.train_store_path,
             key='dataset',
-            where=f'organisation_id={organisation_id}')
+            where=f'organisation_id=="{organisation_id}"')
 
-        frame = frame.reset_index('group_id', drop=True)
+        frame = frame.reset_index(
+            'organisation_id', drop=True).reset_index(
+                'group_id', drop=True)
 
         animal_ids = list(set(frame.index.get_level_values('animal_id')))
 
