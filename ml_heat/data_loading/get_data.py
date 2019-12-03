@@ -4,14 +4,15 @@
 import os
 import json
 import datetime
+import pickle
 import h5py as h5
 import pandas as pd
 from tqdm import tqdm
+from collections import defaultdict
 from sxapi import LowLevelAPI, APIv2
 from sxapi.low import PrivateAPIv2
 from anthilldb.settings import LiveConfig
 from anthilldb.client import DirectDBClient
-from anthilldb.commands.downloader import download_key
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -38,23 +39,25 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
     os.path.join(os.getcwd(), 'key.json'))
 
 
-def parse_csv(filepath, timezone):
-    try:
-        frame = pd.read_csv(
-            filepath, index_col=0, parse_dates=[0],
-            date_parser=lambda col: pd.to_datetime(col, utc=True))
-    except pd.errors.EmptyDataError:
-        os.remove(filepath)
+def download_key(db_client, key, metrics, from_dt, to_dt, output_file_path):
+    timeseries = db_client.get_metrics(key, metrics, from_dt, to_dt)
 
-    frame = frame.tz_convert(timezone)
+    animal_data = defaultdict(lambda: [None] * len(metrics))
+    for i, metric_data in enumerate(timeseries):
+        for p in metric_data.all(raw=True):
+            tzinfo = datetime.timezone(datetime.timedelta(seconds=p.ts_offset))
+            dt_str = datetime.datetime.fromtimestamp(p.ts).astimezone(tzinfo)
+            animal_data[dt_str][i] = p.value
 
-    os.remove(filepath)
+    frame = pd.DataFrame(animal_data).T.sort_index()
 
-    if frame.empty:
-        return
+    if not frame.empty:
+        frame.columns = metrics
 
-    writepath = filepath.replace('.csv', '')
-    frame.to_hdf(writepath)
+    writepath = os.path.join(output_file_path, f'{key}')
+
+    with open(writepath, 'wb') as file:
+        pickle.dump(frame, file)
 
 
 class DataLoader(object):
@@ -328,6 +331,10 @@ class DataLoader(object):
 
         print('Loading sensordata...')
 
+        # for _id in animal_ids:
+        #     download_key(
+        #         self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
+
         results = [self.process_pool.submit(
             download_key, self.dbclient, _id, metrics, from_dt, to_dt,
             temp_path) for _id in animal_ids]
@@ -343,39 +350,7 @@ class DataLoader(object):
 
         print('Download finished...')
 
-    def csv_to_temp_hdf(self):
-        print('Processing data into storage format...')
-
-        temp_path = os.path.join(self.store_path, 'temp')
-        files = [s for s in os.listdir(temp_path) if s.endswith('.csv')]
-        filepaths = [os.path.join(temp_path, x) for x in files]
-
-        futures = []
-        for filepath in filepaths:
-            animal_id = filepath.split('/')[-1].split('.csv')[0]
-            organisation_id = self.organisation_id_for_animal_id(animal_id)
-            with self.readfile() as file:
-                organisation = json.loads(
-                    file[f'data/{organisation_id}/organisation'][()])
-            timezone = organisation['timezone']
-
-            futures.append(
-                self.process_pool.submit(
-                    parse_csv, filepath, timezone))
-
-        kwargs = {
-            'total': len(futures),
-            'unit': 'files',
-            'unit_scale': True,
-            'leave': True
-        }
-
-        for f in tqdm(as_completed(futures), **kwargs):
-            pass
-
-        print('Processing finished...')
-
-    def combine_to_hdf(self):
+    def pickle_to_hdf(self):
         print('Writing data to hdf file...')
 
         temp_path = os.path.join(self.store_path, 'temp')
@@ -386,7 +361,12 @@ class DataLoader(object):
             animal_id = filepath.split('/')[-1]
             organisation_id = self.organisation_id_for_animal_id(animal_id)
 
-            frame = pd.read_hdf(filepath)
+            with open(filepath, 'rb') as file:
+                try:
+                    frame = pickle.load(file)
+                except EOFError:
+                    os.remove(filepath)
+                    continue
 
             if frame.empty:
                 os.remove(filepath)
@@ -409,8 +389,7 @@ class DataLoader(object):
         self.load_animals(organisation_ids=organisation_ids, update=update)
         self.load_sensordata_from_db(
             organisation_ids=organisation_ids, update=update)
-        self.csv_to_temp_hdf()
-        self.combine_to_hdf()
+        self.pickle_to_hdf()
 
     def sanitize_organisation(self, organisation):
         organisation.pop('name', None)
