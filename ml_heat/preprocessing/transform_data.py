@@ -448,7 +448,7 @@ class DataTransformer(object):
     def transform_data(self):
         print('Transforming data...')
         # create temp storage folder
-        temp_path = os.path.join(self.store_path, 'temp')
+        temp_path = os.path.join(self.store_path, 'preprocessing_temp')
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
@@ -477,7 +477,7 @@ class DataTransformer(object):
 
     def store_data(self):
         print('Writing data to hdf file...')
-        temp_path = os.path.join(self.store_path, 'temp')
+        temp_path = os.path.join(self.store_path, 'preprocessing_temp')
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 

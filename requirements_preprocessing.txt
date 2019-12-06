@@ -1,0 +1,6 @@
+h5py
+tqdm
+pandas
+matplotlib
+tables
+-e git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
