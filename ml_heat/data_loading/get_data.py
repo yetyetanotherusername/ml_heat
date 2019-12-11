@@ -367,6 +367,10 @@ class DataLoader(object):
                 except EOFError:
                     os.remove(filepath)
                     continue
+                except Exception as e:
+                    print(e)
+                    print(animal_id)
+                    continue
 
             if frame.empty:
                 os.remove(filepath)

@@ -19,3 +19,6 @@ token.json
 *.egg
 *.egg-info
 
+# dask
+**/dask-worker-space
+

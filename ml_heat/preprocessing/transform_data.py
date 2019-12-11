@@ -212,6 +212,7 @@ def add_pregnant(inframe, animal):
 
 
 def add_deleted(inframe, animal, events):
+    inframe = inframe.sort_index()
     frame = pd.DataFrame(events)
     frame = frame[frame.event_type == 'actincrease_704']
     detected_heats = pd.to_datetime(
@@ -306,9 +307,13 @@ def add_features(inframe, organisation, animal):
 
 
 def add_group_feature(inframe):
-    # inframe['act_group_mean'] = float('nan')
     frame = inframe['act'].copy(deep=True)
+
     frame = frame.drop(index='N/A', level=1)
+
+    if frame.empty:
+        inframe['act_group_mean'] = float('nan')
+        return inframe
 
     # make animal id a column index
     frame = frame.unstack('animal_id').sort_index()
@@ -451,29 +456,32 @@ class DataTransformer(object):
         temp_path = os.path.join(self.store_path, 'preprocessing_temp')
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
+        else:
+            files = os.listdir(temp_path)
+            filtered_orga_ids = [
+                x for x in self.organisation_ids if x not in files]
 
-        # for organisation_id in tqdm(self.organisation_ids):
-        #     print(organisation_id)
-        #     transform_organisation(
-        #         organisation_id,
-        #         self.raw_store_path,
-        #         temp_path)
+        for organisation_id in tqdm(filtered_orga_ids):
+            transform_organisation(
+                organisation_id,
+                self.raw_store_path,
+                temp_path)
 
-        results = [self.process_pool.submit(
-            transform_organisation, _id, self.raw_store_path, temp_path)
-            for _id in self.organisation_ids]
+        # results = [self.process_pool.submit(
+        #     transform_organisation, _id, self.raw_store_path, temp_path)
+        #     for _id in self.organisation_ids]
 
-        kwargs = {
-            'total': len(results),
-            'unit': 'organisations',
-            'unit_scale': True,
-            'leave': True
-        }
+        # kwargs = {
+        #     'total': len(results),
+        #     'unit': 'organisations',
+        #     'unit_scale': True,
+        #     'leave': True
+        # }
 
-        for f in tqdm(as_completed(results), **kwargs):
-            pass
+        # for f in tqdm(as_completed(results), **kwargs):
+        #     pass
 
-        print('Transformation finished')
+        # print('Transformation finished')
 
     def store_data(self):
         print('Writing data to hdf file...')
