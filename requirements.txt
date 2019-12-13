@@ -1,3 +1,5 @@
+vaex
+vaex-ml
 h5py
 pycodestyle
 tqdm

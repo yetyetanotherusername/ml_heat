@@ -4,6 +4,8 @@
 import os
 import json
 import pickle
+import vaex as vx
+import vaex.ml.transformations as tf
 import h5py as h5
 import pandas as pd
 from tqdm import tqdm
@@ -456,6 +458,7 @@ class DataTransformer(object):
         temp_path = os.path.join(self.store_path, 'preprocessing_temp')
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
+            filtered_orga_ids = self.organisation_ids
         else:
             files = os.listdir(temp_path)
             filtered_orga_ids = [
@@ -496,6 +499,10 @@ class DataTransformer(object):
             'partner_id': min_itemsize
         }
 
+        vxpath = os.path.join(self.store_path, 'vaex_store')
+        if not os.path.exists(vxpath):
+            os.mkdir(vxpath)
+
         with pd.HDFStore(self.train_store_path) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
@@ -504,6 +511,8 @@ class DataTransformer(object):
                 if frame.empty:
                     os.remove(filepath)
                     continue
+
+                vxframe = vx.from_pandas(frame.reset_index())
 
                 try:
                     train_store.append(
@@ -518,6 +527,11 @@ class DataTransformer(object):
                 except Exception as e:
                     print(e)
 
+                vxfilepath = os.path.join(
+                    vxpath,
+                    os.path.basename(filepath) + '.hdf5')
+                vxframe.export_hdf5(vxfilepath)
+
         print('Finished writing training data...')
         print('Cleaning up...')
         os.rmdir(temp_path)
@@ -526,6 +540,12 @@ class DataTransformer(object):
     def clear_data(self):
         if os.path.exists(self.train_store_path):
             os.remove(self.train_store_path)
+
+        vxpath = os.path.join(self.store_path, 'vaex_store')
+        if os.path.exists(vxpath):
+            vxfiles = os.listdir(vxpath)
+            for file in vxfiles:
+                os.remove(os.path.join(vxpath, file))
 
     def sanitize_data(self):
         organisation_ids = self.organisation_ids
@@ -545,6 +565,18 @@ class DataTransformer(object):
                 orga_group.create_dataset(
                     name='organisation',
                     data=json.dumps(organisation))
+
+    def one_hot_encode(self):
+        vxpath = os.path.join(self.store_path, 'vaex_store')
+        frame = vx.open(os.path.join(vxpath, '*'))
+        frame = frame.drop('index')
+
+        string_cols = ['race', 'country', 'partner_id']
+        encoder = tf.OneHotEncoder(
+            features=string_cols)
+        frame_encoded = encoder.fit_transform(frame).drop(string_cols)
+
+        frame_encoded.export_hdf5(os.path.join(vxpath, 'traindata.vxhdf5'))
 
     def test(self):
         import matplotlib.pyplot as plt
@@ -623,6 +655,7 @@ class DataTransformer(object):
         self.clear_data()
         self.transform_data()
         self.store_data()
+        self.one_hot_encode()
         # self.test()
 
 
