@@ -311,7 +311,7 @@ def add_features(inframe, organisation, animal):
 def add_group_feature(inframe):
     frame = inframe['act'].copy(deep=True)
 
-    frame = frame.drop(index='N/A', level=1)
+    frame = frame.drop(index='N/A', level=0)
 
     if frame.empty:
         inframe['act_group_mean'] = float('nan')
@@ -322,9 +322,7 @@ def add_group_feature(inframe):
 
     # group into 10 minute bins
     grouped = frame.reset_index(
-        ['organisation_id', 'group_id']).groupby(
-            ['organisation_id', 'group_id', pd.Grouper(
-                freq='10T', level='datetime')]).mean()
+        ['group_id']).groupby(pd.Grouper(freq='10T', level='datetime')).mean()
 
     # include only if there are enough values available for mean
     grouped = grouped[grouped.count(axis=1) >= 5]
@@ -345,11 +343,11 @@ def add_group_feature(inframe):
     frame.columns = [frame.columns, ['act'] * len(frame.columns)]
     frame = frame.stack(level=0, dropna=False)
     frame.index = frame.index.rename(
-        ['organisation_id', 'group_id', 'datetime', 'animal_id'])
+        ['group_id', 'datetime', 'animal_id'])
     frame['act_group_mean'] = float('nan')
     frame = frame.unstack('animal_id')
     frame = frame.swaplevel(axis=1).sort_index().sort_index(axis=1)
-    frame.loc[(slice(None), slice(None), slice(None)),
+    frame.loc[(slice(None), slice(None)),
               (slice(None), 'act_group_mean')] = group_mean
     del group_mean
 
@@ -419,12 +417,24 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = pd.concat(framelist, sort=False)
     frame.index.names = ['datetime']
 
-    frame = frame.set_index(
-        ['organisation_id', 'group_id', 'animal_id', frame.index])
+    frame = frame.drop('organisation_id', axis=1).set_index(
+        ['group_id', 'animal_id', frame.index])
 
     frame = frame.sort_index()
 
-    frame = add_group_feature(frame)
+    groups = list(set(frame.index.get_level_values('group_id')))
+
+    reslist = []
+    for group in groups:
+        subframe = frame.loc[(group, slice(None), slice(None)), slice(None)]
+
+        reslist.append(add_group_feature(subframe))
+
+    frame = pd.concat(reslist)
+
+    frame['organisation_id'] = organisation_id
+    frame = frame.set_index(['organisation_id', frame.index])
+    frame = frame.sort_index()
 
     write_path = os.path.join(temp_path, organisation_id)
     with open(write_path, 'wb') as writefile:
