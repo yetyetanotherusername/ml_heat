@@ -38,6 +38,8 @@ def calculate_dims(index, animal):
     frame.dims = frame.dims.fillna(method='ffill')
     frame = frame.dropna()
 
+    frame.dims = pd.to_numeric(frame.dims, downcast='float')
+
     return frame.dims
 
 
@@ -305,6 +307,10 @@ def add_features(inframe, organisation, animal):
     inframe['partner_id'] = partner_id
     inframe['DIM'] = calculate_dims(inframe.index, animal)
 
+    inframe.race = inframe.race.astype('category')
+    inframe.country = inframe.country.astype('category')
+    inframe.partner_id = inframe.partner_id.astype('category')
+
     return inframe
 
 
@@ -322,7 +328,8 @@ def add_group_feature(inframe):
 
     # group into 10 minute bins
     grouped = frame.reset_index(
-        ['group_id']).groupby(pd.Grouper(freq='10T', level='datetime')).mean()
+        ['group_id']).groupby(
+            ['group_id', pd.Grouper(freq='10T', level='datetime')]).mean()
 
     # include only if there are enough values available for mean
     grouped = grouped[grouped.count(axis=1) >= 5]
@@ -375,6 +382,9 @@ def transform_animal(organisation, animal_id, readpath, readfile):
         readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
     events = json.loads(
         readfile[f'data/{organisation_id}/{animal_id}/events'][()])
+
+    data.act = pd.to_numeric(data.act, downcast='float')
+    data.temp = pd.to_numeric(data.temp, downcast='float')
 
     # remove localization -> index is localtime without tzinfo
     # needed so we can have all animal indices in one column
