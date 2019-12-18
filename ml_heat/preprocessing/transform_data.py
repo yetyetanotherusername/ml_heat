@@ -438,8 +438,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     reslist = []
     for group in groups:
-        subframe = frame.loc[(group, slice(None), slice(None)), slice(None)]
-
+        subframe = frame.loc[
+            (group, slice(None), slice(None)), slice(None)].copy(deep=True)
         reslist.append(add_group_feature(subframe))
 
     frame = pd.concat(reslist)
@@ -552,9 +552,18 @@ class DataTransformer(object):
                     self.vxstore, os.path.basename(filepath) + '.hdf5')
                 vxframe.export_hdf5(vxfilepath)
 
+        vxfiles = [
+            os.path.join(self.vxstore, x) for x in
+            os.listdir(self.vxstore) if x.endswith('.hdf5')]
+
+        vxframe = vx.open_many(vxfiles)
+        self.store_vxframe(vxframe.drop('index'))
+
         print('Finished writing training data...')
         print('Cleaning up...')
         os.rmdir(temp_path)
+        for file in vxfiles:
+            os.remove(os.path.join(self.vxstore, file))
         print('Done!')
 
     def clear_data(self):
@@ -586,8 +595,7 @@ class DataTransformer(object):
                     data=json.dumps(organisation))
 
     def load_vxframe(self):
-        frame = vx.open(os.path.join(self.vxstore, '*'))
-        return frame.drop('index')
+        return vx.open(os.path.join(self.vxstore, 'traindata.vxhdf5'))
 
     def store_vxframe(self, frame):
         frame.export_hdf5(
