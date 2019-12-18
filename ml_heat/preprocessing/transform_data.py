@@ -533,8 +533,6 @@ class DataTransformer(object):
                     os.remove(filepath)
                     continue
 
-                vxframe = vx.from_pandas(frame.reset_index())
-
                 try:
                     train_store.append(
                         key='dataset', value=frame,
@@ -548,6 +546,12 @@ class DataTransformer(object):
                 except Exception as e:
                     print(e)
 
+                frame = frame.reset_index()
+                frame.race = frame.race.astype('str')
+                frame.country = frame.country.astype('str')
+                frame.partner_id = frame.partner_id.astype('str')
+
+                vxframe = vx.from_pandas(frame)
                 vxfilepath = os.path.join(
                     self.vxstore, os.path.basename(filepath) + '.hdf5')
                 vxframe.export_hdf5(vxfilepath)
