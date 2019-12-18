@@ -218,6 +218,8 @@ def add_pregnant(inframe, animal):
 def add_deleted(inframe, animal, events):
     inframe = inframe.sort_index()
     frame = pd.DataFrame(events)
+    if frame.empty:
+        return inframe
     frame = frame[frame.event_type == 'actincrease_704']
     detected_heats = pd.to_datetime(
         frame.event_ts, format=('%Y-%m-%dT%H:%M:%S')).to_list()
@@ -459,6 +461,9 @@ class DataTransformer(object):
         self.store_path = os.path.join(os.getcwd(), 'ml_heat/__data_store__')
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
+        self.vxstore = os.path.join(self.store_path, 'vaex_store')
+        if not os.path.exists(self.vxstore):
+            os.mkdir(self.vxstore)
 
         self.process_pool = ProcessPoolExecutor(os.cpu_count())
 
@@ -519,10 +524,6 @@ class DataTransformer(object):
             'partner_id': min_itemsize
         }
 
-        vxpath = os.path.join(self.store_path, 'vaex_store')
-        if not os.path.exists(vxpath):
-            os.mkdir(vxpath)
-
         with pd.HDFStore(self.train_store_path) as train_store:
             for filepath in tqdm(filepaths):
                 with open(filepath, 'rb') as file:
@@ -548,8 +549,7 @@ class DataTransformer(object):
                     print(e)
 
                 vxfilepath = os.path.join(
-                    vxpath,
-                    os.path.basename(filepath) + '.hdf5')
+                    self.vxstore, os.path.basename(filepath) + '.hdf5')
                 vxframe.export_hdf5(vxfilepath)
 
         print('Finished writing training data...')
@@ -561,11 +561,10 @@ class DataTransformer(object):
         if os.path.exists(self.train_store_path):
             os.remove(self.train_store_path)
 
-        vxpath = os.path.join(self.store_path, 'vaex_store')
-        if os.path.exists(vxpath):
-            vxfiles = os.listdir(vxpath)
+        if os.path.exists(self.vxstore):
+            vxfiles = os.listdir(self.vxstore)
             for file in vxfiles:
-                os.remove(os.path.join(vxpath, file))
+                os.remove(os.path.join(self.vxstore, file))
 
     def sanitize_data(self):
         organisation_ids = self.organisation_ids
@@ -586,15 +585,22 @@ class DataTransformer(object):
                     name='organisation',
                     data=json.dumps(organisation))
 
+    def load_vxframe(self):
+        frame = vx.open(os.path.join(self.vxstore, '*'))
+        return frame.drop('index')
+
+    def store_vxframe(self, frame):
+        frame.export_hdf5(
+            os.path.join(self.vxstore, 'traindata.vxhdf5'))
+
     def one_hot_encode(self):
-        vxpath = os.path.join(self.store_path, 'vaex_store')
-        frame = vx.open(os.path.join(vxpath, '*'))
-        frame = frame.drop('index')
+        frame = self.load_vxframe()
 
         string_cols = ['race', 'country', 'partner_id']
         encoder = tf.OneHotEncoder(
             features=string_cols)
         frame_encoded = encoder.fit_transform(frame).drop(string_cols)
+        self.store_vxframe(frame_encoded)
 
         frame_encoded.export_hdf5(os.path.join(vxpath, 'traindata.vxhdf5'))
 
