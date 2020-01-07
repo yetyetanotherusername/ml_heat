@@ -9,7 +9,6 @@ import vaex.ml.transformations as tf
 import h5py as h5
 import pandas as pd
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
@@ -465,8 +464,6 @@ class DataTransformer(object):
         if not os.path.exists(self.vxstore):
             os.mkdir(self.vxstore)
 
-        self.process_pool = ProcessPoolExecutor(os.cpu_count())
-
     def readfile(self, how='r'):
         return h5.File(self.raw_store_path, how)
 
@@ -494,22 +491,6 @@ class DataTransformer(object):
                 organisation_id,
                 self.raw_store_path,
                 temp_path)
-
-        # results = [self.process_pool.submit(
-        #     transform_organisation, _id, self.raw_store_path, temp_path)
-        #     for _id in self.organisation_ids]
-
-        # kwargs = {
-        #     'total': len(results),
-        #     'unit': 'organisations',
-        #     'unit_scale': True,
-        #     'leave': True
-        # }
-
-        # for f in tqdm(as_completed(results), **kwargs):
-        #     pass
-
-        # print('Transformation finished')
 
     def store_data(self):
         print('Writing data to hdf file...')
@@ -561,7 +542,8 @@ class DataTransformer(object):
             os.listdir(self.vxstore) if x.endswith('.hdf5')]
 
         vxframe = vx.open_many(vxfiles)
-        self.store_vxframe(vxframe.drop('index'))
+        vxframe.drop('index').export_hdf5(
+            os.path.join(self.vxstore, 'traindata.hdf5'))
 
         print('Finished writing training data...')
         print('Cleaning up...')
@@ -606,13 +588,19 @@ class DataTransformer(object):
             os.path.join(self.vxstore, 'traindata.vxhdf5'))
 
     def one_hot_encode(self):
+        print('Performing one hot encoding...')
         frame = self.load_vxframe()
-
+        old_cols = frame.get_column_names()
         string_cols = ['race', 'country', 'partner_id']
         encoder = tf.OneHotEncoder(
             features=string_cols)
-        frame_encoded = encoder.fit_transform(frame).drop(string_cols)
-        self.store_vxframe(frame_encoded)
+        frame_encoded = encoder.fit_transform(frame)
+        all_cols = frame_encoded.get_column_names()
+        new_cols = [col for col in all_cols if col not in old_cols]
+        frame_encoded[new_cols].export_hdf5(
+            os.path.join(self.vxstore, 'one_hot.hdf5'),
+            virtual=True)
+        print('Done!')
 
         frame_encoded.export_hdf5(os.path.join(vxpath, 'traindata.vxhdf5'))
 
