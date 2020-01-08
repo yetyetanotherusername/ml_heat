@@ -8,6 +8,7 @@ import vaex as vx
 import vaex.ml.transformations as tf
 import h5py as h5
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 
 from sxutils.models.animal.cycle import AnimalLifecycle
@@ -514,6 +515,10 @@ class DataTransformer(object):
                     os.remove(filepath)
                     continue
 
+                frame.race = frame.race.astype('str')
+                frame.country = frame.country.astype('str')
+                frame.partner_id = frame.partner_id.astype('str')
+
                 try:
                     train_store.append(
                         key='dataset', value=frame,
@@ -528,9 +533,6 @@ class DataTransformer(object):
                     print(e)
 
                 frame = frame.reset_index()
-                frame.race = frame.race.astype('str')
-                frame.country = frame.country.astype('str')
-                frame.partner_id = frame.partner_id.astype('str')
 
                 vxframe = vx.from_pandas(frame)
                 vxfilepath = os.path.join(
