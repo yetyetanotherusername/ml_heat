@@ -725,8 +725,8 @@ class DataTransformer(object):
 
 
 def main():
-    transformer = DataTransformer(['59e7515edb84e482acce8339'])
-    # transformer = DataTransformer()
+    #transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    transformer = DataTransformer()
     transformer.run()
 
 
