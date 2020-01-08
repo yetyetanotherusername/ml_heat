@@ -628,7 +628,19 @@ class DataTransformer(object):
             virtual=True)
         print('Done!')
 
-        frame_encoded.export_hdf5(os.path.join(vxpath, 'traindata.vxhdf5'))
+    def scale_numeric_cols(self):
+        print('Performing data scaling...')
+        frame = self.load_vxframe()
+        old_cols = frame.get_column_names()
+        numeric_cols = ['act', 'temp', 'DIM', 'act_group_mean']
+        encoder = tf.RobustScaler(features=numeric_cols)
+        frame_scaled = encoder.fit_transform(frame)
+        all_cols = frame_scaled.get_column_names()
+        new_cols = [col for col in all_cols if col not in old_cols]
+        frame_scaled[new_cols].export_hdf5(
+            os.path.join(self.vxstore, 'scaled.hdf5'),
+            virtual=True)
+        print('Done!')
 
     def test(self):
         import matplotlib.pyplot as plt
@@ -708,12 +720,13 @@ class DataTransformer(object):
         self.transform_data()
         self.store_data()
         self.one_hot_encode()
+        self.scale_numeric_cols()
         # self.test()
 
 
 def main():
-    # transformer = DataTransformer(['59e7515edb84e482acce8339'])
-    transformer = DataTransformer()
+    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    # transformer = DataTransformer()
     transformer.run()
 
 
