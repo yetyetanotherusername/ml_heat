@@ -543,15 +543,33 @@ class DataTransformer(object):
             os.path.join(self.vxstore, x) for x in
             os.listdir(self.vxstore) if x.endswith('.hdf5')]
 
+        # can't open too many files at once, so first chunk it :-P
+        # split it into 10 chunks, remove chunks that may be empty
+        chunked = [x for x in np.array_split(vxfiles, 10) if x.size > 0]
+
+        for idx, chunk in enumerate(chunked):
+            vxframe = vxframe = vx.open_many(chunk)
+            vxframe.drop('index').export_hdf5(
+                os.path.join(self.vxstore, f'temp{idx}.hdf5'))
+            vxframe.close_files()
+            for file in chunk:
+                os.remove(file)
+
+        # unify the chunked files into one file :-P
+        vxfiles = [
+            os.path.join(self.vxstore, x) for x in
+            os.listdir(self.vxstore) if x.endswith('.hdf5') and
+            x.startswith('temp')]
+
         vxframe = vx.open_many(vxfiles)
-        vxframe.drop('index').export_hdf5(
+        vxframe.export_hdf5(
             os.path.join(self.vxstore, 'traindata.hdf5'))
 
         print('Finished writing training data...')
         print('Cleaning up...')
         os.rmdir(temp_path)
         for file in vxfiles:
-            os.remove(os.path.join(self.vxstore, file))
+            os.remove(file)
         print('Done!')
 
     def clear_data(self):
@@ -583,11 +601,17 @@ class DataTransformer(object):
                     data=json.dumps(organisation))
 
     def load_vxframe(self):
-        return vx.open(os.path.join(self.vxstore, 'traindata.vxhdf5'))
+        vxfiles = [
+            os.path.join(self.vxstore, x) for x in
+            os.listdir(self.vxstore) if x.endswith('.hdf5')]
 
-    def store_vxframe(self, frame):
-        frame.export_hdf5(
-            os.path.join(self.vxstore, 'traindata.vxhdf5'))
+        frame = vx.open(vxfiles[0])
+
+        for file in vxfiles[1:]:
+            frame2 = vx.open(file)
+            frame = frame.join(frame2)
+
+        return frame
 
     def one_hot_encode(self):
         print('Performing one hot encoding...')
