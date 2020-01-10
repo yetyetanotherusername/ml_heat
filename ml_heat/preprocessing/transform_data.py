@@ -541,13 +541,16 @@ class DataTransformer(object):
 
         vxfiles = [
             os.path.join(self.vxstore, x) for x in
-            os.listdir(self.vxstore) if x.endswith('.hdf5')]
+            os.listdir(self.vxstore) if x.endswith('.hdf5') and
+            not x.startswith('temp')]
 
         # can't open too many files at once, so first chunk it :-P
         # split it into 10 chunks, remove chunks that may be empty
         chunked = [x for x in np.array_split(vxfiles, 10) if x.size > 0]
 
-        for idx, chunk in enumerate(chunked):
+        print('unifying vaex database into single file')
+
+        for idx, chunk in tqdm(enumerate(chunked)):
             vxframe = vxframe = vx.open_many(chunk)
             vxframe.drop('index').export_hdf5(
                 os.path.join(self.vxstore, f'temp{idx}.hdf5'))
