@@ -647,6 +647,12 @@ class DataTransformer(object):
 
     def test(self):
         import matplotlib.pyplot as plt
+        from cycler import cycler
+
+        plt.style.use('dark_background')
+        plt.rcParams['axes.prop_cycle'] = cycler(
+            color=[u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd',
+                   u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf'])
 
         organisation_id = '59e7515edb84e482acce8339'
 
@@ -716,6 +722,24 @@ class DataTransformer(object):
                 plt.legend()
                 plt.grid()
 
+        plt.show()
+
+    def test1(self):
+        import matplotlib.pyplot as plt
+        from cycler import cycler
+
+        plt.style.use('dark_background')
+        plt.rcParams['axes.prop_cycle'] = cycler(
+            color=[u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd',
+                   u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf'])
+
+        frame = self.load_vxframe(self.vxstore)
+        frame = frame.to_pandas_df()
+        frame = frame.set_index('datetime')
+        frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
+                  ('robust_scaled_act', 'robust_scaled_temp',
+                   'robust_scaled_act_group_mean')].plot()
+        plt.grid()
         plt.show()
 
     def run(self):
