@@ -14,6 +14,7 @@ from tqdm import tqdm
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
 from animal_serde import AnimalSchemaV2
+from ml_heat.helper import load_vxframe
 
 
 def calculate_dims(index, animal):
@@ -462,6 +463,7 @@ class DataTransformer(object):
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
         self.vxstore = os.path.join(self.store_path, 'vaex_store')
+        self.load_vxframe = load_vxframe
         if not os.path.exists(self.vxstore):
             os.mkdir(self.vxstore)
 
@@ -603,22 +605,9 @@ class DataTransformer(object):
                     name='organisation',
                     data=json.dumps(organisation))
 
-    def load_vxframe(self):
-        vxfiles = [
-            os.path.join(self.vxstore, x) for x in
-            os.listdir(self.vxstore) if x.endswith('.hdf5')]
-
-        frame = vx.open(vxfiles[0])
-
-        for file in vxfiles[1:]:
-            frame2 = vx.open(file)
-            frame = frame.join(frame2)
-
-        return frame
-
     def one_hot_encode(self):
         print('Performing one hot encoding...')
-        frame = self.load_vxframe()
+        frame = self.load_vxframe(self.vxstore)
         old_cols = frame.get_column_names()
         string_cols = ['race', 'country', 'partner_id']
         encoder = tf.OneHotEncoder(
@@ -633,7 +622,7 @@ class DataTransformer(object):
 
     def scale_numeric_cols(self):
         print('Performing data scaling...')
-        frame = self.load_vxframe()
+        frame = self.load_vxframe(self.vxstore)
         old_cols = frame.get_column_names()
         numeric_cols = ['act', 'temp', 'DIM', 'act_group_mean']
         encoder = tf.RobustScaler(features=numeric_cols)
