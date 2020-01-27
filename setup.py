@@ -14,7 +14,7 @@ except ImportError:
 with open('README.md') as readme_file:
     readme = readme_file.read()
 
-install_reqs = parse_requirements('requirements.txt', session=False)
+install_reqs = parse_requirements('requirements_preprocessing.txt', session=False)
 
 # parse_requirements is not really intended to be used like this. we should probably
 # find a better way to start our apps correctly and do not demand on installing

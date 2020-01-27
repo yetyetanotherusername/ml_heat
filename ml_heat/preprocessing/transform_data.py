@@ -737,12 +737,12 @@ class DataTransformer(object):
         self.store_data()
         self.one_hot_encode()
         self.scale_numeric_cols()
-        # self.test()
+        self.test1()
 
 
 def main():
-    #transformer = DataTransformer(['59e7515edb84e482acce8339'])
-    transformer = DataTransformer()
+    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    # transformer = DataTransformer()
     transformer.run()
 
 
