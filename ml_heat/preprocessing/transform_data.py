@@ -464,6 +464,8 @@ class DataTransformer(object):
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
         self.vxstore = os.path.join(self.store_path, 'vaex_store')
         self.load_vxframe = load_vxframe
+        if not os.path.exists(self.store_path):
+            os.mkdir(self.store_path)
         if not os.path.exists(self.vxstore):
             os.mkdir(self.vxstore)
 
