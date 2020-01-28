@@ -5,3 +5,4 @@ matplotlib
 tables
 -e git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
 vaex
+six>=1.12.0

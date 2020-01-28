@@ -23,6 +23,23 @@ Run setup.py in develop mode
 python setup.py develop
 ```
 
+## Running everything in a container
+If rawdata.hdf5 file is present, it should be placed in 
+```
+ml_heat/__data_store__/rawdata.hdf5.
+```
+before building the container so it gets copied with the repository.
+
+Build docker container. Due to the amount of data that has to be copied, this will take some time.
+```
+docker build -t ml_heat_image .
+```
+
+Run docker container and attach to it.
+```
+docker run -it --entrypoint /bin/bash ml_heat_image
+```
+
 ## Run Tests
 ```
 pytest tests/
@@ -30,7 +47,7 @@ pytest tests/
 
 ## Download data
 
-This step is only possible with developer access to smaxtec google cloud
+This step is only possible with developer access to smaxtec google cloud (not necessary if rawdata.hdf5 is already present)
 
 Establish port forwarding into the cluster
 ```
