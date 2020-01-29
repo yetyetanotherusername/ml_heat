@@ -14,7 +14,10 @@ from tqdm import tqdm
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
 from animal_serde import AnimalSchemaV2
-from ml_heat.helper import load_vxframe
+from ml_heat.helper import (
+    load_vxframe,
+    plot_setup
+)
 
 
 def calculate_dims(index, animal):
@@ -622,6 +625,26 @@ class DataTransformer(object):
             virtual=True)
         print('Done!')
 
+    def remove_drink_spikes(self):
+        print('Performing drink spike removal')
+        frame = self.load_vxframe(self.vxstore)
+        old_cols = frame.get_column_names()
+
+        plt = plot_setup()
+
+        frame = frame[frame.animal_id == '59e75f2b9e182f68cf25721d']
+        frame['temp_mean'] = 
+        frame['temp_filtered'] = frame.temp - 10
+
+        plt.plot(frame.datetime.values, frame.temp.values, label='temp')
+        plt.plot(frame.datetime.values,
+                 frame.temp_filtered.values,
+                 label='filtered_temp')
+
+        plt.grid()
+        plt.legend()
+        plt.show()
+
     def scale_numeric_cols(self):
         print('Performing data scaling...')
         frame = self.load_vxframe(self.vxstore)
@@ -637,13 +660,7 @@ class DataTransformer(object):
         print('Done!')
 
     def test(self):
-        import matplotlib.pyplot as plt
-        from cycler import cycler
-
-        plt.style.use('dark_background')
-        plt.rcParams['axes.prop_cycle'] = cycler(
-            color=[u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd',
-                   u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf'])
+        plt = plot_setup()
 
         organisation_id = '59e7515edb84e482acce8339'
 
@@ -716,13 +733,7 @@ class DataTransformer(object):
         plt.show()
 
     def test1(self):
-        import matplotlib.pyplot as plt
-        from cycler import cycler
-
-        plt.style.use('dark_background')
-        plt.rcParams['axes.prop_cycle'] = cycler(
-            color=[u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd',
-                   u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf'])
+        plt = plot_setup()
 
         frame = self.load_vxframe(self.vxstore)
         frame = frame.to_pandas_df()
@@ -734,12 +745,13 @@ class DataTransformer(object):
         plt.show()
 
     def run(self):
-        self.clear_data()
-        self.transform_data()
-        self.store_data()
-        self.one_hot_encode()
-        self.scale_numeric_cols()
-        self.test1()
+        # self.clear_data()
+        # self.transform_data()
+        # self.store_data()
+        # self.one_hot_encode()
+        self.remove_drink_spikes()
+        # self.scale_numeric_cols()
+        # self.test1()
 
 
 def main():
