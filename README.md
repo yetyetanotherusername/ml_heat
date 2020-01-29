@@ -37,7 +37,7 @@ docker build -t ml_heat_image .
 
 Run docker container and attach to it.
 ```
-docker run -it --entrypoint /bin/bash ml_heat_image
+docker run -it -v ${PWD}/ml_heat/__data_store__:/ml_heat/ml_heat/__data_store__ --privileged ml_heat_image
 ```
 
 ## Run Tests
