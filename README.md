@@ -1,6 +1,6 @@
 # Machine Learning assisted heat detection
 
-## Setup
+## Setup on local machine
 
 Create virtual environment
 ```
@@ -24,21 +24,24 @@ python setup.py develop
 ```
 
 ## Running everything in a container
+
 If rawdata.hdf5 file is present, it should be placed in 
 ```
-ml_heat/__data_store__/rawdata.hdf5.
+ml_heat/ml_heat/__data_store__/rawdata.hdf5.
 ```
-before building the container so it gets copied with the repository.
+before building the container so the container can mount it.
 
-Build docker container. Due to the amount of data that has to be copied, this will take some time.
+Build docker container
 ```
 docker build -t ml_heat_image .
 ```
 
-Run docker container and attach to it.
+Run docker container and attach to it
 ```
 docker run -it -v ${PWD}/ml_heat/__data_store__:/ml_heat/ml_heat/__data_store__ --privileged ml_heat_image
 ```
+Note that inside the container, you have to substitute `python3` for `python`.
+
 
 ## Run Tests
 ```
