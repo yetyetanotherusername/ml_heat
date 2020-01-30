@@ -40,7 +40,7 @@ Run docker container and attach to it
 ```
 docker run -it -v ${PWD}/ml_heat/__data_store__:/ml_heat/ml_heat/__data_store__ --privileged ml_heat_image
 ```
-Note that inside the container, you have to substitute `python3` for `python`.
+Note that inside the container, you have to substitute `python3` for `python`. These instructions should also work with podman instead of docker.
 
 
 ## Run Tests
@@ -64,7 +64,7 @@ python ml_heat/data_loading/get_data.py
 
 ## Prepare data
 
-This step uses the downloaded rawdata, generates a few features and puts the data into a pandas dataframe ready for use
+This step uses the downloaded rawdata, generates a few features and puts the data into a hdf5 database that can be read with vaex
 
 Perform preprocessing & data cleaning
 ```

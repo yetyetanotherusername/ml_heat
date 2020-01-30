@@ -320,7 +320,7 @@ def add_features(inframe, organisation, animal):
 def add_group_feature(inframe):
     frame = inframe['act'].copy(deep=True)
 
-    frame = frame.drop(index='N/A', level=0)
+    frame = frame.drop(index='N/A', level=0, errors='ignore')
 
     if frame.empty:
         inframe['act_group_mean'] = float('nan')
