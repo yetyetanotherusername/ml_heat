@@ -3,6 +3,9 @@ import vaex as vx
 
 
 def load_vxframe(vxstore):
+    # TODO: implement the join in vaex so it actually joins on all index
+    # columns
+
     vxfiles = [
         os.path.join(vxstore, x) for x in
         os.listdir(vxstore) if x.endswith('.hdf5')]
@@ -29,6 +32,11 @@ def vaex_to_pandas(vxframe):
     ]).sort_index()
 
     return pandas_frame
+
+
+def pandas_to_vaex(pdframe):
+    pdframe = pdframe.reset_index()
+    return vx.from_pandas(pdframe)
 
 
 def load_data(store_path, organisation_ids=None, dtype='pandas'):

@@ -17,6 +17,7 @@ from animal_serde import AnimalSchemaV2
 from ml_heat.helper import (
     load_vxframe,
     vaex_to_pandas,
+    pandas_to_vaex,
     plot_setup
 )
 
@@ -627,42 +628,67 @@ class DataTransformer(object):
         print('Done!')
 
     def remove_drink_spikes(self):
-        print('Performing drink spike removal')
-        frame = self.load_vxframe(self.vxstore)
+        def kernel(vxframe):
+            frame = vaex_to_pandas(vxframe)
 
-        frame = vaex_to_pandas(frame)
-        print('Done transforming, starting calculation...')
-        frame = frame.temp.to_frame('temp').xs(
-            '59e75f2b9e182f68cf25721d', level='animal_id')
+            frame['temp_median'] = frame.rolling(
+                288, min_periods=1, center=True).median()
 
-        frame['temp_median'] = frame.rolling(
-            288, min_periods=1, center=True).median()
+            frame['temp_var'] = frame.temp.rolling(288, min_periods=1).var()
+            frame['temp_mean'] = frame.temp.rolling(
+                72, min_periods=1, center=True).mean()
 
-        frame['temp_var'] = frame.temp.rolling(288, min_periods=1).var()
-        frame['temp_mean'] = frame.temp.rolling(
-            72, min_periods=1, center=True).mean()
+            frame['lower_bound'] = frame.temp_median - frame.temp_var * 0.55
+            frame['temp_filtered'] = frame.temp
+            frame.loc[
+                frame.temp < frame.lower_bound,
+                'temp_filtered'
+            ] = frame.temp_mean
 
-        frame['lower_bound'] = frame.temp_median - frame.temp_var * 0.55
-        frame['temp_filtered'] = frame.temp
-        frame.loc[
-            frame.temp < frame.lower_bound,
-            'temp_filtered'
-        ] = frame.temp_mean
+            frame['filler'] = frame.temp_filtered.rolling(
+                36, min_periods=1, center=True).mean()
 
-        frame['filler'] = frame.temp_filtered.rolling(
-            36, min_periods=1, center=True).mean()
+            frame.loc[
+                frame.temp < frame.lower_bound,
+                'temp_filtered'
+            ] = frame.filler
 
-        frame.loc[
-            frame.temp < frame.lower_bound,
-            'temp_filtered'
-        ] = frame.filler
+            return pandas_to_vaex(
+                frame.temp_filtered.to_frame('temp_filtered'))
 
-        plt = plot_setup()
-        frame.temp_filtered.reset_index(
-            ['organisation_id', 'group_id'],
-            drop=True).plot(grid=True)
+        print('Performing drink spike removal...')
+        vxframe = self.load_vxframe(self.vxstore)
 
-        plt.show()
+        # have to do removal for each animal separately
+        animal_ids = list(set(vxframe.animal_id.tolist()))
+
+        cnt = 0
+        for animal_id in tqdm(animal_ids):
+            animal_slice = vxframe[vxframe.animal_id == animal_id]
+            animal_slice = animal_slice[
+                'organisation_id', 'group_id', 'animal_id', 'datetime', 'temp']
+
+            temp_filtered = kernel(animal_slice)
+            temp_filtered.export_hdf5(
+                os.path.join(self.vxstore, f'temp_filtered{cnt}.hdf5'),
+                virtual=True)
+
+            cnt += 1
+
+        vxframe = vx.open(os.path.join(self.vxstore, f'temp_filtered*.hdf5'))
+        vxframe.export_hdf5(
+            os.path.join(self.vxstore, f'temp_filtered.hdf5'), virtual=True)
+
+        # clean up after ourselves
+        tempfiles = [
+            os.path.join(self.vxstore, x) for x in
+            os.listdir(self.vxstore) if x.endswith('.hdf5') and
+            x.startswith('temp_filtered') and
+            x != 'temp_filtered.hdf5']
+
+        for tempfile in tempfiles:
+            os.remove(tempfile)
+        print('Done!')
 
     def scale_numeric_cols(self):
         print('Performing data scaling...')
@@ -760,6 +786,11 @@ class DataTransformer(object):
         frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
                   ('robust_scaled_act', 'robust_scaled_temp',
                    'robust_scaled_act_group_mean')].plot()
+
+        print(frame['temp', 'temp_filtered'])
+        # plt.figure()
+        # frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
+        #           ('temp', 'temp_filtered')].plot()
         plt.grid()
         plt.show()
 
@@ -770,7 +801,7 @@ class DataTransformer(object):
         # self.one_hot_encode()
         self.remove_drink_spikes()
         # self.scale_numeric_cols()
-        # self.test1()
+        self.test1()
 
 
 def main():
