@@ -16,6 +16,7 @@ from sxutils.munch.cyclemunch import cycle_munchify
 from animal_serde import AnimalSchemaV2
 from ml_heat.helper import (
     load_vxframe,
+    vaex_to_pandas,
     plot_setup
 )
 
@@ -628,21 +629,39 @@ class DataTransformer(object):
     def remove_drink_spikes(self):
         print('Performing drink spike removal')
         frame = self.load_vxframe(self.vxstore)
-        old_cols = frame.get_column_names()
+
+        frame = vaex_to_pandas(frame)
+        print('Done transforming, starting calculation...')
+        frame = frame.temp.to_frame('temp').xs(
+            '59e75f2b9e182f68cf25721d', level='animal_id')
+
+        frame['temp_median'] = frame.rolling(
+            288, min_periods=1, center=True).median()
+
+        frame['temp_var'] = frame.temp.rolling(288, min_periods=1).var()
+        frame['temp_mean'] = frame.temp.rolling(
+            72, min_periods=1, center=True).mean()
+
+        frame['lower_bound'] = frame.temp_median - frame.temp_var * 0.55
+        frame['temp_filtered'] = frame.temp
+        frame.loc[
+            frame.temp < frame.lower_bound,
+            'temp_filtered'
+        ] = frame.temp_mean
+
+        frame['filler'] = frame.temp_filtered.rolling(
+            36, min_periods=1, center=True).mean()
+
+        frame.loc[
+            frame.temp < frame.lower_bound,
+            'temp_filtered'
+        ] = frame.filler
 
         plt = plot_setup()
+        frame.temp_filtered.reset_index(
+            ['organisation_id', 'group_id'],
+            drop=True).plot(grid=True)
 
-        frame = frame[frame.animal_id == '59e75f2b9e182f68cf25721d']
-        frame['temp_mean'] = 
-        frame['temp_filtered'] = frame.temp - 10
-
-        plt.plot(frame.datetime.values, frame.temp.values, label='temp')
-        plt.plot(frame.datetime.values,
-                 frame.temp_filtered.values,
-                 label='filtered_temp')
-
-        plt.grid()
-        plt.legend()
         plt.show()
 
     def scale_numeric_cols(self):

@@ -16,6 +16,21 @@ def load_vxframe(vxstore):
     return frame
 
 
+def vaex_to_pandas(vxframe):
+    pandas_frame = vxframe.to_pandas_df().drop(
+        'index', axis=1, errors='ignore'
+    )
+
+    pandas_frame = pandas_frame.set_index([
+        'organisation_id',
+        'group_id',
+        'animal_id',
+        'datetime'
+    ]).sort_index()
+
+    return pandas_frame
+
+
 def load_data(store_path, organisation_ids=None, dtype='pandas'):
     store = load_vxframe(store_path)
 
@@ -26,13 +41,7 @@ def load_data(store_path, organisation_ids=None, dtype='pandas'):
         out = store[store.organisation_id.isin(organisation_ids)]
 
     if dtype == 'pandas':
-        out = out.to_pandas_df().drop('index', axis=1)
-        out = out.set_index([
-            'organisation_id',
-            'group_id',
-            'animal_id',
-            'datetime'
-        ]).sort_index()
+        out = vaex_to_pandas(out)
 
     elif dtype == 'vaex':
         pass
