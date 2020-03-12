@@ -14,15 +14,17 @@ def load_vxframe(vxstore):
 
     for file in vxfiles[1:]:
         frame2 = vx.open(file)
-        frame = frame.join(frame2)
+        frame = frame.join(
+            frame2, left_on='unique_idx', right_on='unique_idx')
 
     return frame
 
 
-def vaex_to_pandas(vxframe):
-    pandas_frame = vxframe.to_pandas_df().drop(
-        'index', axis=1, errors='ignore'
-    )
+def vaex_to_pandas(vxframe, drop_index=True):
+    pandas_frame = vxframe.to_pandas_df()
+
+    if drop_index is True:
+        pandas_frame = pandas_frame.drop('index', axis=1, errors='ignore')
 
     pandas_frame = pandas_frame.set_index([
         'organisation_id',
