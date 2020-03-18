@@ -14,8 +14,7 @@ def load_vxframe(vxstore):
 
     for file in vxfiles[1:]:
         frame2 = vx.open(file)
-        frame = frame.join(
-            frame2, left_on='unique_idx', right_on='unique_idx')
+        frame = frame.join(frame2)
 
     return frame
 

@@ -627,7 +627,6 @@ class DataTransformer(object):
         frame_encoded['unique_idx'] = frame['unique_idx']
         all_cols = frame_encoded.get_column_names()
         new_cols = [col for col in all_cols if col not in old_cols]
-        new_cols.append('unique_idx')
         frame_encoded[new_cols].export_hdf5(
             os.path.join(self.vxstore, 'one_hot.hdf5'),
             virtual=True)
@@ -684,6 +683,7 @@ class DataTransformer(object):
             cnt += 1
 
         vxframe = vx.open(os.path.join(self.vxstore, f'temp_filtered*.hdf5'))
+        vxframe = vxframe.sort('unique_idx').drop('unique_idx')
         vxframe.export_hdf5(
             os.path.join(self.vxstore, f'temp_filtered.hdf5'), virtual=True)
 
@@ -710,7 +710,6 @@ class DataTransformer(object):
         frame_scaled = encoder.fit_transform(frame)
         all_cols = frame_scaled.get_column_names()
         new_cols = [col for col in all_cols if col not in old_cols]
-        new_cols.append('unique_idx')
         frame_scaled[new_cols].export_hdf5(
             os.path.join(self.vxstore, 'scaled.hdf5'),
             virtual=True)
