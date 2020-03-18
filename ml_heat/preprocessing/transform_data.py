@@ -575,9 +575,6 @@ class DataTransformer(object):
 
         vxframe = vx.open_many(vxfiles)
 
-        # we have to generate a unique index so we can rejoin later
-        vxframe['unique_idx'] = vx.vrange(0, len(vxframe), dtype='int64')
-
         vxframe.export_hdf5(
             os.path.join(self.vxstore, 'traindata.hdf5'))
 
@@ -624,7 +621,6 @@ class DataTransformer(object):
         encoder = tf.OneHotEncoder(
             features=string_cols)
         frame_encoded = encoder.fit_transform(frame)
-        frame_encoded['unique_idx'] = frame['unique_idx']
         all_cols = frame_encoded.get_column_names()
         new_cols = [col for col in all_cols if col not in old_cols]
         frame_encoded[new_cols].export_hdf5(
@@ -664,6 +660,9 @@ class DataTransformer(object):
 
         print('Performing drink spike removal...')
         vxframe = self.load_vxframe(self.vxstore)
+
+        # we have to generate a unique index so we can rejoin later
+        vxframe['unique_idx'] = vx.vrange(0, len(vxframe), dtype='int64')
 
         # have to do removal for each animal separately
         animal_ids = list(set(vxframe.animal_id.tolist()))
@@ -797,11 +796,11 @@ class DataTransformer(object):
         frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
                   ('robust_scaled_act', 'robust_scaled_temp',
                    'robust_scaled_act_group_mean')].plot()
+        plt.grid()
 
-        print(frame['temp', 'temp_filtered'])
-        # plt.figure()
-        # frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
-        #           ('temp', 'temp_filtered')].plot()
+        plt.figure()
+        frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
+                  ('temp', 'temp_filtered')].plot()
         plt.grid()
         plt.show()
 
