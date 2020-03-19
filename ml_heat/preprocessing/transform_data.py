@@ -798,7 +798,6 @@ class DataTransformer(object):
                    'robust_scaled_act_group_mean')].plot()
         plt.grid()
 
-        plt.figure()
         frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
                   ('temp', 'temp_filtered')].plot()
         plt.grid()
