@@ -859,7 +859,7 @@ class DataTransformer(object):
         self.one_hot_encode()
         self.remove_drink_spikes()
         self.scale_numeric_cols()
-        self.test1()
+        # self.test1()
 
 
 def main():
