@@ -3,9 +3,6 @@ import vaex as vx
 
 
 def load_vxframe(vxstore):
-    # TODO: implement the join in vaex so it actually joins on all index
-    # columns
-
     vxfiles = [
         os.path.join(vxstore, x) for x in
         os.listdir(vxstore) if x.endswith('.hdf5')]

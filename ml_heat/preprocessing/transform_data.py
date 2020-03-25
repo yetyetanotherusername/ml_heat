@@ -18,7 +18,8 @@ from ml_heat.helper import (
     load_vxframe,
     vaex_to_pandas,
     pandas_to_vaex,
-    plot_setup
+    plot_setup,
+    load_data
 )
 
 
@@ -421,7 +422,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
             lambda x: x != 'organisation', animal_ids))
 
         framelist = []
-        for animal_id in animal_ids:
+        for animal_id in tqdm(animal_ids, leave=False, desc='animal loop'):
             frame = transform_animal(
                 organisation, animal_id, readpath, readfile)
 
@@ -443,7 +444,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
     groups = list(set(frame.index.get_level_values('group_id')))
 
     reslist = []
-    for group in groups:
+    for group in tqdm(groups, leave=False, desc='group loop'):
         subframe = frame.loc[
             (group, slice(None), slice(None)), slice(None)].copy(deep=True)
         reslist.append(add_group_feature(subframe))
@@ -496,7 +497,8 @@ class DataTransformer(object):
             filtered_orga_ids = [
                 x for x in self.organisation_ids if x not in files]
 
-        for organisation_id in tqdm(filtered_orga_ids):
+        for organisation_id in tqdm(
+                filtered_orga_ids, desc='organisation loop'):
             transform_organisation(
                 organisation_id,
                 self.raw_store_path,
@@ -508,45 +510,46 @@ class DataTransformer(object):
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 
-        min_itemsize = 10
-        itemsize_dict = {
-            'race': min_itemsize,
-            'country': min_itemsize,
-            'partner_id': min_itemsize
-        }
+        # min_itemsize = 10
+        # itemsize_dict = {
+        #     'race': min_itemsize,
+        #     'country': min_itemsize,
+        #     'partner_id': min_itemsize
+        # }
 
-        with pd.HDFStore(self.train_store_path) as train_store:
-            for filepath in tqdm(filepaths):
-                with open(filepath, 'rb') as file:
-                    frame = pickle.load(file)
+        # with pd.HDFStore(self.train_store_path) as train_store:
+        for filepath in tqdm(filepaths):
+            with open(filepath, 'rb') as file:
+                frame = pickle.load(file)
 
-                if frame.empty:
-                    os.remove(filepath)
-                    continue
+            if frame.empty:
+                os.remove(filepath)
+                continue
 
-                frame.race = frame.race.astype('str')
-                frame.country = frame.country.astype('str')
-                frame.partner_id = frame.partner_id.astype('str')
+            frame.race = frame.race.astype('str')
+            frame.country = frame.country.astype('str')
+            frame.partner_id = frame.partner_id.astype('str')
 
-                try:
-                    train_store.append(
-                        key='dataset', value=frame,
-                        min_itemsize=itemsize_dict)
-                    os.remove(filepath)
-                except KeyError as e:
-                    print(e)
-                except ValueError as e:
-                    print(frame)
-                    print(e)
-                except Exception as e:
-                    print(e)
+            # try:
+            #     train_store.append(
+            #         key='dataset', value=frame,
+            #         min_itemsize=itemsize_dict)
+            #     os.remove(filepath)
+            # except KeyError as e:
+            #     print(e)
+            # except ValueError as e:
+            #     print(frame)
+            #     print(e)
+            # except Exception as e:
+            #     print(e)
 
-                frame = frame.reset_index()
+            os.remove(filepath)
+            frame = frame.reset_index()
 
-                vxframe = vx.from_pandas(frame)
-                vxfilepath = os.path.join(
-                    self.vxstore, os.path.basename(filepath) + '.hdf5')
-                vxframe.export_hdf5(vxfilepath)
+            vxframe = vx.from_pandas(frame)
+            vxfilepath = os.path.join(
+                self.vxstore, os.path.basename(filepath) + '.hdf5')
+            vxframe.export_hdf5(vxfilepath)
 
         vxfiles = [
             os.path.join(self.vxstore, x) for x in
@@ -559,7 +562,7 @@ class DataTransformer(object):
 
         print('unifying vaex database into single file')
 
-        for idx, chunk in tqdm(enumerate(chunked)):
+        for idx, chunk in tqdm(enumerate(chunked), total=len(chunked)):
             vxframe = vxframe = vx.open_many(chunk)
             vxframe.drop('index').export_hdf5(
                 os.path.join(self.vxstore, f'temp{idx}.hdf5'))
@@ -578,7 +581,6 @@ class DataTransformer(object):
         vxframe.export_hdf5(
             os.path.join(self.vxstore, 'traindata.hdf5'))
 
-        print('Finished writing training data...')
         print('Cleaning up...')
         os.rmdir(temp_path)
         for file in vxfiles:
@@ -667,8 +669,8 @@ class DataTransformer(object):
         # have to do removal for each animal separately
         animal_ids = list(set(vxframe.animal_id.tolist()))
 
-        cnt = 0
-        for animal_id in tqdm(animal_ids):
+        for idx, animal_id in tqdm(
+                enumerate(animal_ids), total=len(animal_ids)):
             animal_slice = vxframe[vxframe.animal_id == animal_id]
             animal_slice = animal_slice[
                 'organisation_id', 'group_id',
@@ -676,10 +678,8 @@ class DataTransformer(object):
             temp_filtered = kernel(animal_slice)
             temp_filtered = temp_filtered['temp_filtered', 'unique_idx']
             temp_filtered.export_hdf5(
-                os.path.join(self.vxstore, f'temp_filtered{cnt}.hdf5'),
+                os.path.join(self.vxstore, f'temp_filtered{idx}.hdf5'),
                 virtual=True)
-
-            cnt += 1
 
         vxframe = vx.open(os.path.join(self.vxstore, f'temp_filtered*.hdf5'))
         vxframe = vxframe.sort('unique_idx').drop('unique_idx')
@@ -790,16 +790,65 @@ class DataTransformer(object):
     def test1(self):
         plt = plot_setup()
 
-        frame = self.load_vxframe(self.vxstore)
-        frame = frame.to_pandas_df()
-        frame = frame.set_index('datetime')
-        frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
-                  ('robust_scaled_act', 'robust_scaled_temp',
-                   'robust_scaled_act_group_mean')].plot()
-        plt.grid()
+        frame = load_data(self.vxstore)
+        # frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
+        #           ('robust_scaled_act', 'robust_scaled_temp',
+        #            'robust_scaled_act_group_mean')].plot()
+        # plt.grid()
 
-        frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
-                  ('temp', 'temp_filtered')].plot()
+        frame = frame.loc[(
+            slice(None),
+            slice(None),
+            '59e75f2b9e182f68cf25721d',
+            slice(None)),
+            :
+        ].reset_index().set_index('datetime')
+
+        frame.loc[
+            :, ('act', 'temp', 'temp_filtered', 'act_group_mean', 'DIM')
+        ].plot()
+
+        cyclic = frame[frame.cyclic == True].index.to_list()  # noqa
+        inseminated = frame[
+            frame.inseminated == True].index.to_list()  # noqa
+        pregnant = frame[frame.pregnant == True].index.to_list()  # noqa
+        deleted = frame[frame.deleted == True].index.to_list()  # noqa
+
+        td = pd.Timedelta(hours=4)
+        for x in cyclic:
+            xmin = x - td
+            xmax = x + td
+            plt.axvspan(
+                xmin, xmax, color='g', alpha=0.5,
+                label='cyclic heats'
+            )
+
+        for x in inseminated:
+            xmin = x - td
+            xmax = x + td
+            plt.axvspan(
+                xmin, xmax, color='y', alpha=0.5,
+                label='inseminated heats'
+            )
+
+        for x in pregnant:
+            xmin = x - td
+            xmax = x + td
+            plt.axvspan(
+                xmin, xmax, color='b', alpha=0.5,
+                label='pregnant heats'
+            )
+
+        for x in deleted:
+            xmin = x - td
+            xmax = x + td
+            plt.axvspan(
+                xmin, xmax, color='r', alpha=0.5,
+                label='deleted heats'
+            )
+
+        plt.legend()
+
         plt.grid()
         plt.show()
 
