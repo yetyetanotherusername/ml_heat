@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
-from animal_serde import AnimalSchemaV2
+from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 from ml_heat.helper import (
     load_vxframe,
     vaex_to_pandas,
