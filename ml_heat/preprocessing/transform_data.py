@@ -297,12 +297,12 @@ def add_features(inframe, organisation, animal):
         race = [word[0] + '_' for word in animal['race'].split('_')]
         race = ''.join(race)
 
-    partner_id = organisation.get('partner_id', 'N/A')
-    if partner_id is None:
-        partner_id = 'N/A'
+    # partner_id = organisation.get('partner_id', 'N/A')
+    # if partner_id is None:
+    #     partner_id = 'N/A'
 
-    if len(partner_id) > 10:
-        partner_id = partner_id[:10]
+    # if len(partner_id) > 10:
+    #     partner_id = partner_id[:10]
 
     group_id = animal.get('group_id', 'N/A')
     if group_id is None:
@@ -316,19 +316,19 @@ def add_features(inframe, organisation, animal):
     inframe['animal_id'] = animal['_id']
     inframe['race'] = race
     inframe['country'] = country
-    inframe['partner_id'] = partner_id
+    # inframe['partner_id'] = partner_id
     inframe['DIM'] = calculate_dims(inframe.index, animal)
 
     inframe.race = inframe.race.astype('category')
     inframe.country = inframe.country.astype('category')
-    inframe.partner_id = inframe.partner_id.astype('category')
+    # inframe.partner_id = inframe.partner_id.astype('category')
 
     return inframe
 
 
 def add_group_feature(inframe):
-    frame = inframe['act'].copy(deep=True)
-
+    frame = inframe['act'].drop(
+        index='N/A', level=0, errors='ignore').copy(deep=True)
     frame = frame.drop(index='N/A', level=0, errors='ignore')
 
     if frame.empty:
@@ -485,7 +485,7 @@ def store_vaex_hdf5(filepath, storepath):
 
     frame.race = frame.race.astype('str')
     frame.country = frame.country.astype('str')
-    frame.partner_id = frame.partner_id.astype('str')
+    # frame.partner_id = frame.partner_id.astype('str')
 
     vxframe = pandas_to_vaex(frame)
     del frame
@@ -654,6 +654,7 @@ class DataTransformer(object):
 
             organisation.pop('account', None)
             organisation.pop('name', None)
+            organisation.pop('partner_id', None)
 
             with self.readfile('a') as file:
                 orga_group = file[f'data/{organisation_id}']
@@ -747,80 +748,10 @@ class DataTransformer(object):
     def test(self):
         plt = plot_setup()
 
-        organisation_id = '59e7515edb84e482acce8339'
-
-        print('Test: Loading data...')
-
-        frame = pd.read_hdf(
-            self.train_store_path,
-            key='dataset',
-            where=f'organisation_id=="{organisation_id}"')
-
-        frame = frame.reset_index(
-            'organisation_id', drop=True).reset_index(
-                'group_id', drop=True)
-
-        animal_ids = list(set(frame.index.get_level_values('animal_id')))
-
-        with self.readfile() as file:
-            for animal_id in animal_ids[0:10]:
-
-                animal = json.loads(
-                    file[f'data/{organisation_id}/'
-                         f'{animal_id}/animal'][()])
-
-                subframe = frame.loc[(animal_id)]
-
-                cyclic = subframe[subframe.cyclic == True].index.to_list()  # noqa
-                inseminated = subframe[
-                    subframe.inseminated == True].index.to_list()  # noqa
-                pregnant = subframe[subframe.pregnant == True].index.to_list()  # noqa
-                deleted = subframe[subframe.deleted == True].index.to_list()  # noqa
-
-                subframe.plot()
-
-                td = pd.Timedelta(hours=4)
-                for x in cyclic:
-                    xmin = x - td
-                    xmax = x + td
-                    plt.axvspan(
-                        xmin, xmax, color='g', alpha=0.5,
-                        label='cyclic heats'
-                    )
-
-                for x in inseminated:
-                    xmin = x - td
-                    xmax = x + td
-                    plt.axvspan(
-                        xmin, xmax, color='y', alpha=0.5,
-                        label='inseminated heats'
-                    )
-
-                for x in pregnant:
-                    xmin = x - td
-                    xmax = x + td
-                    plt.axvspan(
-                        xmin, xmax, color='b', alpha=0.5,
-                        label='pregnant heats'
-                    )
-
-                for x in deleted:
-                    xmin = x - td
-                    xmax = x + td
-                    plt.axvspan(
-                        xmin, xmax, color='r', alpha=0.5,
-                        label='deleted heats'
-                    )
-
-                plt.legend()
-                plt.grid()
-
-        plt.show()
-
-    def test1(self):
-        plt = plot_setup()
-
-        frame = load_data(self.vxstore)
+        vxframe = load_vxframe(self.vxstore)
+        vxframe = vxframe[
+            vxframe.organisation_id == '59e7515edb84e482acce8339']
+        frame = vaex_to_pandas(vxframe)
         # frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
         #           ('robust_scaled_act', 'robust_scaled_temp',
         #            'robust_scaled_act_group_mean')].plot()
