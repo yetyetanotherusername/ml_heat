@@ -327,7 +327,7 @@ def add_features(inframe, organisation, animal):
 
 
 def add_group_feature(inframe):
-    frame = inframe['act']
+    frame = inframe['act'].copy(deep=True)
 
     frame = frame.drop(index='N/A', level=0, errors='ignore')
 
@@ -338,31 +338,12 @@ def add_group_feature(inframe):
     # make animal id a column index
     frame = frame.unstack('animal_id').sort_index()
 
-    # group into 10 minute bins
-    grouped = frame.reset_index(
-        ['group_id']).groupby(
-            ['group_id', pd.Grouper(freq='10T', level='datetime')]).mean()
-
     # include only if there are enough values available for mean
-    grouped = grouped[grouped.count(axis=1) >= 5]
-
-    # calculate the mean of all groups in 10 minute bins
-    group_mean = grouped.mean(axis=1)
-    del grouped
-
-    group_mean = group_mean.rename('act_group_mean')
-    frame = pd.concat([frame, group_mean], axis=1)
-
-    # save group mean separately
-    frame.act_group_mean = frame.act_group_mean.fillna(method='ffill')
-    group_mean = frame.act_group_mean.copy(deep=True)
-    frame = frame.drop('act_group_mean', axis=1)
+    group_mean = frame[frame.count(axis=1) >= 5].mean(axis=1)
 
     # create multilevel column index and add group mean to each animal
     frame.columns = [frame.columns, ['act'] * len(frame.columns)]
     frame = frame.stack(level=0, dropna=False)
-    frame.index = frame.index.rename(
-        ['group_id', 'datetime', 'animal_id'])
     frame['act_group_mean'] = float('nan')
     frame = frame.unstack('animal_id')
     frame = frame.swaplevel(axis=1).sort_index().sort_index(axis=1)
@@ -373,7 +354,7 @@ def add_group_feature(inframe):
     # recreate original dataframe with all animals in one column
     frame = frame.stack('animal_id', dropna=False)
     frame = frame.swaplevel().dropna(subset=['act']).sort_index()
-    inframe = pd.concat([inframe, frame.act_group_mean], axis=1)
+    inframe['act_group_mean'] = frame.act_group_mean
 
     return inframe
 
@@ -401,6 +382,9 @@ def transform_animal(organisation, animal_id, readpath, readfile):
     # remove localization -> index is localtime without tzinfo
     # needed so we can have all animal indices in one column
     data = data.tz_localize(None)
+
+    # normalize all timestamps to 10minute base
+    data.index = data.index.round('10T')
 
     # drop duplicates in index resulting from DST switch
     data = data[~data.index.duplicated(keep='first')]
