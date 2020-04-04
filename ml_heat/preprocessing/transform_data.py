@@ -568,7 +568,7 @@ class DataTransformer(object):
 
         kwargs = {
             'total': len(filepaths),
-            'unit': 'organisations',
+            'unit': 'animals',
             'unit_scale': True,
             'leave': True
         }
