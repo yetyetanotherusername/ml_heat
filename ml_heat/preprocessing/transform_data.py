@@ -497,6 +497,45 @@ def store_vaex_hdf5(filepath, storepath):
     return filepath
 
 
+def drink_cycle_kernel(animal_id, idx, vxstore):
+    vxframe = load_vxframe(vxstore)
+    animal_slice = vxframe[vxframe.animal_id == animal_id]
+    animal_slice = animal_slice[
+        'organisation_id', 'group_id',
+        'animal_id', 'datetime', 'temp', 'unique_idx']
+
+    frame = vaex_to_pandas(vxframe, drop_index=False)
+
+    frame['temp_median'] = frame.temp.rolling(
+        288, min_periods=1, center=True).median()
+
+    frame['temp_var'] = frame.temp.rolling(288, min_periods=1).var()
+    frame['temp_mean'] = frame.temp.rolling(
+        72, min_periods=1, center=True).mean()
+
+    frame['lower_bound'] = frame.temp_median - frame.temp_var * 0.55
+    frame['temp_filtered'] = frame.temp
+    frame.loc[
+        frame.temp < frame.lower_bound,
+        'temp_filtered'
+    ] = frame.temp_mean
+
+    frame['filler'] = frame.temp_filtered.rolling(
+        36, min_periods=1, center=True).mean()
+
+    frame.loc[
+        frame.temp < frame.lower_bound,
+        'temp_filtered'
+    ] = frame.filler
+
+    temp_filtered = pandas_to_vaex(
+        frame['temp_filtered', 'unique_idx'])
+    temp_filtered.export_hdf5(
+        os.path.join(vxstore, f'temp_filtered{idx}.hdf5'),
+        virtual=True)
+    return idx
+
+
 class DataTransformer(object):
     def __init__(self, organisation_ids=None):
         self._organisation_ids = organisation_ids
@@ -640,35 +679,6 @@ class DataTransformer(object):
         print('Done!')
 
     def remove_drink_spikes(self):
-        # TODO: fork processes for speedup
-        def kernel(vxframe):
-            frame = vaex_to_pandas(vxframe, drop_index=False)
-
-            frame['temp_median'] = frame.temp.rolling(
-                288, min_periods=1, center=True).median()
-
-            frame['temp_var'] = frame.temp.rolling(288, min_periods=1).var()
-            frame['temp_mean'] = frame.temp.rolling(
-                72, min_periods=1, center=True).mean()
-
-            frame['lower_bound'] = frame.temp_median - frame.temp_var * 0.55
-            frame['temp_filtered'] = frame.temp
-            frame.loc[
-                frame.temp < frame.lower_bound,
-                'temp_filtered'
-            ] = frame.temp_mean
-
-            frame['filler'] = frame.temp_filtered.rolling(
-                36, min_periods=1, center=True).mean()
-
-            frame.loc[
-                frame.temp < frame.lower_bound,
-                'temp_filtered'
-            ] = frame.filler
-
-            return pandas_to_vaex(
-                frame[['temp_filtered', 'unique_idx']])
-
         print('Performing drink spike removal...')
         vxframe = self.load_vxframe(self.vxstore)
 
@@ -678,17 +688,28 @@ class DataTransformer(object):
         # have to do removal for each animal separately
         animal_ids = vxframe.animal_id.unique().tolist()
 
+        vxframe.close_files()
+
+        results = []
         for idx, animal_id in tqdm(
-                enumerate(animal_ids), total=len(animal_ids)):
-            animal_slice = vxframe[vxframe.animal_id == animal_id]
-            animal_slice = animal_slice[
-                'organisation_id', 'group_id',
-                'animal_id', 'datetime', 'temp', 'unique_idx']
-            temp_filtered = kernel(animal_slice)
-            temp_filtered = temp_filtered['temp_filtered', 'unique_idx']
-            temp_filtered.export_hdf5(
-                os.path.join(self.vxstore, f'temp_filtered{idx}.hdf5'),
-                virtual=True)
+                enumerate(animal_ids), total=len(animal_ids),
+                desc='spawn workloads'):
+
+            results.append(
+                process_pool.submit(
+                    drink_cycle_kernel, animal_id, idx, self.vxstore))
+
+        kwargs = {
+            'total': len(animal_ids),
+            'unit': 'animals',
+            'unit_scale': True,
+            'leave': True
+        }
+
+        del animal_ids
+
+        for f in tqdm(as_completed(results), **kwargs):
+            pass
 
         vxframe = vx.open(os.path.join(self.vxstore, f'temp_filtered*.hdf5'))
         vxframe = vxframe.sort('unique_idx').drop('unique_idx')
