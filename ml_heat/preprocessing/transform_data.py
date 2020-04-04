@@ -10,6 +10,7 @@ import h5py as h5
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
@@ -21,6 +22,8 @@ from ml_heat.helper import (
     plot_setup,
     load_data
 )
+
+process_pool = ProcessPoolExecutor(os.cpu_count())
 
 
 def calculate_dims(index, animal):
@@ -324,7 +327,7 @@ def add_features(inframe, organisation, animal):
 
 
 def add_group_feature(inframe):
-    frame = inframe['act'].copy(deep=True)
+    frame = inframe['act']
 
     frame = frame.drop(index='N/A', level=0, errors='ignore')
 
@@ -411,6 +414,14 @@ def transform_animal(organisation, animal_id, readpath, readfile):
     return data
 
 
+def pickle_animal(frame, animal_id, temp_path):
+    write_path = os.path.join(temp_path, animal_id)
+    with open(write_path, 'wb') as writefile:
+        pickle.dump(frame, writefile)
+
+    return animal_id
+
+
 def transform_organisation(organisation_id, readpath, temp_path):
     with h5.File(readpath, 'r') as readfile:
 
@@ -446,7 +457,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
     reslist = []
     for group in tqdm(groups, leave=False, desc='group loop'):
         subframe = frame.loc[
-            (group, slice(None), slice(None)), slice(None)].copy(deep=True)
+            (group, slice(None), slice(None)), slice(None)]
         reslist.append(add_group_feature(subframe))
 
     frame = pd.concat(reslist)
@@ -455,17 +466,58 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = frame.set_index(['organisation_id', frame.index])
     frame = frame.sort_index()
 
-    write_path = os.path.join(temp_path, organisation_id)
-    with open(write_path, 'wb') as writefile:
-        pickle.dump(frame, writefile)
+    animal_ids = frame.index.unique(level='animal_id')
+
+    reslist = []
+    for animal_id in tqdm(animal_ids, leave=False, desc='future loop'):
+        subframe = frame.loc[
+            (slice(None), slice(None), animal_id, slice(None)), slice(None)]
+
+        reslist.append(
+            process_pool.submit(
+                pickle_animal, subframe, animal_id, temp_path))
+
+    kwargs = {
+        'total': len(reslist),
+        'unit': 'animals',
+        'unit_scale': True,
+        'leave': False,
+        'desc': 'pickle loop'
+    }
+
+    for f in tqdm(as_completed(reslist), **kwargs):
+        pass
 
     return organisation_id
+
+
+def store_vaex_hdf5(filepath, storepath):
+    with open(filepath, 'rb') as file:
+        frame = pickle.load(file)
+
+    if frame.empty:
+        os.remove(filepath)
+        return filepath
+
+    frame.race = frame.race.astype('str')
+    frame.country = frame.country.astype('str')
+    frame.partner_id = frame.partner_id.astype('str')
+
+    vxframe = pandas_to_vaex(frame)
+    del frame
+    vxfilepath = os.path.join(
+        storepath, os.path.basename(filepath) + '.hdf5')
+    vxframe.export_hdf5(vxfilepath)
+    vxframe.close_files()
+    os.remove(filepath)
+    return filepath
 
 
 class DataTransformer(object):
     def __init__(self, organisation_ids=None):
         self._organisation_ids = organisation_ids
-        self.store_path = os.path.join(os.getcwd(), 'ml_heat/__data_store__')
+        self.store_path = os.path.join(
+            os.getcwd(), 'ml_heat', '__data_store__')
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
         self.vxstore = os.path.join(self.store_path, 'vaex_store')
@@ -510,46 +562,19 @@ class DataTransformer(object):
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 
-        # min_itemsize = 10
-        # itemsize_dict = {
-        #     'race': min_itemsize,
-        #     'country': min_itemsize,
-        #     'partner_id': min_itemsize
-        # }
+        results = [
+            process_pool.submit(store_vaex_hdf5, filepath, self.vxstore)
+            for filepath in filepaths]
 
-        # with pd.HDFStore(self.train_store_path) as train_store:
-        for filepath in tqdm(filepaths):
-            with open(filepath, 'rb') as file:
-                frame = pickle.load(file)
+        kwargs = {
+            'total': len(filepaths),
+            'unit': 'organisations',
+            'unit_scale': True,
+            'leave': True
+        }
 
-            if frame.empty:
-                os.remove(filepath)
-                continue
-
-            frame.race = frame.race.astype('str')
-            frame.country = frame.country.astype('str')
-            frame.partner_id = frame.partner_id.astype('str')
-
-            # try:
-            #     train_store.append(
-            #         key='dataset', value=frame,
-            #         min_itemsize=itemsize_dict)
-            #     os.remove(filepath)
-            # except KeyError as e:
-            #     print(e)
-            # except ValueError as e:
-            #     print(frame)
-            #     print(e)
-            # except Exception as e:
-            #     print(e)
-
-            os.remove(filepath)
-            frame = frame.reset_index()
-
-            vxframe = vx.from_pandas(frame)
-            vxfilepath = os.path.join(
-                self.vxstore, os.path.basename(filepath) + '.hdf5')
-            vxframe.export_hdf5(vxfilepath)
+        for f in tqdm(as_completed(results), **kwargs):
+            pass
 
         vxfiles = [
             os.path.join(self.vxstore, x) for x in
@@ -667,7 +692,7 @@ class DataTransformer(object):
         vxframe['unique_idx'] = vx.vrange(0, len(vxframe), dtype='int64')
 
         # have to do removal for each animal separately
-        animal_ids = list(set(vxframe.animal_id.tolist()))
+        animal_ids = vxframe.animal_id.unique().tolist()
 
         for idx, animal_id in tqdm(
                 enumerate(animal_ids), total=len(animal_ids)):
