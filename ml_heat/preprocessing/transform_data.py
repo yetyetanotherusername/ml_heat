@@ -327,8 +327,8 @@ def add_features(inframe, organisation, animal):
 
 
 def add_group_feature(inframe):
-    frame = inframe['act'].copy(deep=True)
-
+    frame = inframe['act'].drop(
+        index='N/A', level=0, errors='ignore').copy(deep=True)
     frame = frame.drop(index='N/A', level=0, errors='ignore')
 
     if frame.empty:
