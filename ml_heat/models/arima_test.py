@@ -30,7 +30,7 @@ class ArimaTest(object):
         #     self.data, order=(5, 0, 5), seasonal_order=(5, 0, 5, 144)
         # )
 
-        model = sm.tsa.ARIMA(self.data, order=(5, 0, 5))
+        model = sm.tsa.ARIMA(self.data, order=(1, 0, 1))
         fitted_model = model.fit()
         self.result = fitted_model.predict()
 
