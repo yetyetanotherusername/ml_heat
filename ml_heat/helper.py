@@ -40,7 +40,7 @@ def pandas_to_vaex(pdframe):
 def load_data(store_path, organisation_ids=None, dtype='pandas'):
     """
     Be very careful using this function, if the hdf5 file gets too big,
-    trying to convert it entirely to pandas will 
+    trying to convert it entirely to pandas will
     """
     store = load_vxframe(store_path)
 
