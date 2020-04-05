@@ -12,14 +12,21 @@ class GradientBoostedTrees(object):
     def __init__(self, organisation_ids=None):
         self.organisation_ids = organisation_ids
         self.vxstore = DataTransformer().vxstore
+        self.data = load_vxframe(self.vxstore)
 
-    def get_data(self):
-        data = load_vxframe(self.vxstore)
+    def prepare_data(self):
+        pass
 
-        print(data.head())
+    def train_model(self):
+        pass
+
+    def evaluate_model(self):
+        pass
 
     def run(self):
-        self.get_data()
+        self.prepare_data()
+        self.train_model()
+        self.evaluate_model()
 
 
 def main():
