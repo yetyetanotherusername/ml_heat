@@ -38,9 +38,15 @@ def pandas_to_vaex(pdframe):
 
 
 def load_data(store_path, organisation_ids=None, dtype='pandas'):
+    """
+    Be very careful using this function, if the hdf5 file gets too big,
+    trying to convert it entirely to pandas will 
+    """
     store = load_vxframe(store_path)
 
     if organisation_ids is None:
+        print('WARNING: Converting entire vaex file to pandas.'
+              'This will likely cause memory issues')
         out = store
     else:
         assert type(organisation_ids) == list

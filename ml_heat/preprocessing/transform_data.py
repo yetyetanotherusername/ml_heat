@@ -329,7 +329,6 @@ def add_features(inframe, organisation, animal):
 def add_group_feature(inframe):
     frame = inframe['act'].drop(
         index='N/A', level=0, errors='ignore').copy(deep=True)
-    frame = frame.drop(index='N/A', level=0, errors='ignore')
 
     if frame.empty:
         inframe['act_group_mean'] = float('nan')
@@ -566,8 +565,8 @@ class DataTransformer(object):
             not x.startswith('temp')]
 
         # can't open too many files at once, so first chunk it :-P
-        # split it into 10 chunks, remove chunks that may be empty
-        chunked = [x for x in np.array_split(vxfiles, 10) if x.size > 0]
+        # split it into 100 chunks, remove chunks that may be empty
+        chunked = [x for x in np.array_split(vxfiles, 100) if x.size > 0]
 
         print('unifying vaex database into single file')
 
@@ -629,7 +628,7 @@ class DataTransformer(object):
         print('Performing one hot encoding...')
         frame = self.load_vxframe(self.vxstore)
         old_cols = frame.get_column_names()
-        string_cols = ['race', 'country', 'partner_id']
+        string_cols = ['race', 'country']
         encoder = tf.OneHotEncoder(
             features=string_cols)
         frame_encoded = encoder.fit_transform(frame)
@@ -726,16 +725,7 @@ class DataTransformer(object):
 
     def test(self):
         plt = plot_setup()
-
-        vxframe = load_vxframe(self.vxstore)
-        vxframe = vxframe[
-            vxframe.organisation_id == '59e7515edb84e482acce8339']
-        frame = vaex_to_pandas(vxframe)
-        # frame.loc[frame.animal_id == '59e75f2b9e182f68cf25721d',
-        #           ('robust_scaled_act', 'robust_scaled_temp',
-        #            'robust_scaled_act_group_mean')].plot()
-        # plt.grid()
-
+        frame = load_data(self.vxstore, ['59e7515edb84e482acce8339'])
         frame = frame.loc[(
             slice(None),
             slice(None),
