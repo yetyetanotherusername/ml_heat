@@ -631,12 +631,12 @@ class DataTransformer(object):
 
         # can't open too many files at once, so first chunk it :-P
         # split it into 100 chunks, remove chunks that may be empty
-        chunked = [x for x in np.array_split(vxfiles, 100) if x.size > 0]
+        chunked = [x for x in np.array_split(vxfiles, 40) if x.size > 0]
 
         print('unifying vaex database into single file')
 
         for idx, chunk in tqdm(enumerate(chunked), total=len(chunked)):
-            vxframe = vxframe = vx.open_many(chunk)
+            vxframe = vx.open_many(chunk)
             vxframe.drop('index').export_hdf5(
                 os.path.join(self.vxstore, f'temp{idx}.hdf5'))
             vxframe.close_files()
