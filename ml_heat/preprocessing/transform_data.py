@@ -593,7 +593,7 @@ class DataTransformer(object):
 
             kwargs = {
                 'total': len(filtered_orga_ids),
-                'unit': 'organisations',
+                'unit': 'organisation',
                 'unit_scale': True,
                 'leave': True,
                 'desc': 'Total progress',
@@ -633,7 +633,7 @@ class DataTransformer(object):
         # split it into 100 chunks, remove chunks that may be empty
         chunked = [x for x in np.array_split(vxfiles, 40) if x.size > 0]
 
-        print('unifying vaex database into single file')
+        print('unifying vaex database into chunks')
 
         for idx, chunk in tqdm(enumerate(chunked), total=len(chunked)):
             vxframe = vx.open_many(chunk)
@@ -643,6 +643,7 @@ class DataTransformer(object):
             for file in chunk:
                 os.remove(file)
 
+        print('unifying chunks into single file')
         # unify the chunked files into one file :-P
         vxfiles = [
             os.path.join(self.vxstore, x) for x in
