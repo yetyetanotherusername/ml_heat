@@ -545,6 +545,8 @@ class DataTransformer(object):
         if not os.path.exists(self.vxstore):
             os.mkdir(self.vxstore)
 
+        self._animal_orga_map = None
+
     def readfile(self, how='r'):
         return h5.File(self.raw_store_path, how)
 
@@ -794,9 +796,8 @@ class DataTransformer(object):
         self.transform_data()
         self.store_data()
         self.one_hot_encode()
-        self.remove_drink_spikes()
         self.scale_numeric_cols()
-        # self.test1()
+        # self.test()
 
 
 def main():
