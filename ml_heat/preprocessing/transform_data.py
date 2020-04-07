@@ -11,19 +11,18 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
 from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
+
 from ml_heat.helper import (
     load_vxframe,
-    vaex_to_pandas,
     pandas_to_vaex,
     plot_setup,
     load_data
 )
-
-process_pool = ProcessPoolExecutor(os.cpu_count())
 
 
 def calculate_dims(index, animal):
@@ -435,6 +434,7 @@ def pickle_animal(frame, animal_id, temp_path):
 
 
 def transform_organisation(organisation_id, readpath, temp_path):
+    position = multiprocessing.current_process()._identity[0] + 1
     with h5.File(readpath, 'r') as readfile:
 
         organisation = json.loads(
@@ -444,8 +444,17 @@ def transform_organisation(organisation_id, readpath, temp_path):
         animal_ids = list(filter(
             lambda x: x != 'organisation', animal_ids))
 
+        # out of ram constraints, we cannot process such big organisations
+        if len(animal_ids) > 2000:
+            return organisation
+
         framelist = []
-        for animal_id in tqdm(animal_ids, leave=False, desc='animal loop'):
+        for animal_id in tqdm(
+                animal_ids,
+                leave=False,
+                desc=f'Thread {position - 1} animal loop',
+                position=position):
+
             frame = transform_animal(
                 organisation, animal_id, readpath, readfile)
 
@@ -464,15 +473,20 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     frame = frame.sort_index()
 
-    groups = list(set(frame.index.get_level_values('group_id')))
+    groups = frame.index.unique(level='group_id')
 
     reslist = []
-    for group in tqdm(groups, leave=False, desc='group loop'):
+    for group in tqdm(
+            groups,
+            leave=False,
+            desc=f'Thread {position - 1} group loop',
+            position=position):
+
         subframe = frame.loc[
             (group, slice(None), slice(None)), slice(None)]
         reslist.append(add_group_feature(subframe))
 
-    frame = pd.concat(reslist)
+    frame = pd.concat(reslist, sort=False)
 
     frame['organisation_id'] = organisation_id
     frame = frame.set_index(['organisation_id', frame.index])
@@ -481,24 +495,16 @@ def transform_organisation(organisation_id, readpath, temp_path):
     animal_ids = frame.index.unique(level='animal_id')
 
     reslist = []
-    for animal_id in tqdm(animal_ids, leave=False, desc='future loop'):
+    for animal_id in tqdm(
+            animal_ids,
+            leave=False,
+            desc=f'Thread {position - 1} pickle loop',
+            position=position):
+
         subframe = frame.loc[
             (slice(None), slice(None), animal_id, slice(None)), slice(None)]
 
-        reslist.append(
-            process_pool.submit(
-                pickle_animal, subframe, animal_id, temp_path))
-
-    kwargs = {
-        'total': len(reslist),
-        'unit': 'animals',
-        'unit_scale': True,
-        'leave': False,
-        'desc': 'pickle loop'
-    }
-
-    for f in tqdm(as_completed(reslist), **kwargs):
-        pass
+        pickle_animal(subframe, animal_id, temp_path)
 
     return organisation_id
 
@@ -558,15 +564,42 @@ class DataTransformer(object):
             filtered_orga_ids = self.organisation_ids
         else:
             files = os.listdir(temp_path)
-            filtered_orga_ids = [
-                x for x in self.organisation_ids if x not in files]
+            processed_orgas = list(
+                set([self.organisation_id_for_animal_id(file)
+                     for file in files]))
 
-        for organisation_id in tqdm(
-                filtered_orga_ids, desc='organisation loop'):
-            transform_organisation(
-                organisation_id,
-                self.raw_store_path,
-                temp_path)
+            filtered_orga_ids = [
+                x for x in self.organisation_ids if x not in processed_orgas]
+
+        # TODO: try running the organisation loop in processes now that memory
+        # usage is fixed
+        # for organisation_id in tqdm(
+        #         filtered_orga_ids, desc='organisation loop'):
+        #     transform_organisation(
+        #         organisation_id,
+        #         self.raw_store_path,
+        #         temp_path)
+        with ProcessPoolExecutor(os.cpu_count()) as process_pool:
+            results = [
+                process_pool.submit(
+                    transform_organisation,
+                    organisation_id,
+                    self.raw_store_path,
+                    temp_path
+                ) for organisation_id in filtered_orga_ids
+            ]
+
+            kwargs = {
+                'total': len(filtered_orga_ids),
+                'unit': 'organisations',
+                'unit_scale': True,
+                'leave': True,
+                'desc': 'Total progress',
+                'position': 1
+            }
+
+            for f in tqdm(as_completed(results), **kwargs):
+                pass
 
     def store_data(self):
         print('Writing data to hdf file...')
@@ -574,19 +607,20 @@ class DataTransformer(object):
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 
-        results = [
-            process_pool.submit(store_vaex_hdf5, filepath, self.vxstore)
-            for filepath in filepaths]
+        with ProcessPoolExecutor(os.cpu_count()) as process_pool:
+            results = [
+                process_pool.submit(store_vaex_hdf5, filepath, self.vxstore)
+                for filepath in filepaths]
 
-        kwargs = {
-            'total': len(filepaths),
-            'unit': 'animals',
-            'unit_scale': True,
-            'leave': True
-        }
+            kwargs = {
+                'total': len(filepaths),
+                'unit': 'animals',
+                'unit_scale': True,
+                'leave': True
+            }
 
-        for f in tqdm(as_completed(results), **kwargs):
-            pass
+            for f in tqdm(as_completed(results), **kwargs):
+                pass
 
         vxfiles = [
             os.path.join(self.vxstore, x) for x in
@@ -632,6 +666,17 @@ class DataTransformer(object):
             vxfiles = os.listdir(self.vxstore)
             for file in vxfiles:
                 os.remove(os.path.join(self.vxstore, file))
+
+    def organisation_id_for_animal_id(self, animal_id):
+        if self._animal_orga_map is None:
+            with self.readfile() as file:
+                self._animal_orga_map = json.loads(
+                    file['lookup/animal_to_orga'][()])
+
+        try:
+            return self._animal_orga_map[animal_id]
+        except KeyError:
+            return None
 
     def sanitize_data(self):
         organisation_ids = self.organisation_ids
