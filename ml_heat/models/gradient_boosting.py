@@ -46,16 +46,16 @@ class GradientBoostedTrees(object):
         df2 = df.mlheat.shift('shifted_y', -2, cyclic=True, fill_value=np.nan)
         print(df2)
 
-    def train_model(self):
-        pass
-
-    def evaluate_model(self):
-        pass
+    def get_data(self):
+        data = load_vxframe(self.vxstore)
+        data = data.sort(['organisation_id', 'group_id', 'animal_id', ])
+        print(data.head())
 
     def run(self):
         self.prepare_data()
         self.train_model()
         self.evaluate_model()
+        self.get_data()
 
 
 def main():
