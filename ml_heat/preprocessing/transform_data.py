@@ -636,7 +636,10 @@ class DataTransformer(object):
         print('unifying vaex database into chunks')
 
         for idx, chunk in tqdm(enumerate(chunked), total=len(chunked)):
-            vxframe = vx.open_many(chunk)
+            vxframe = vx.open(chunk[0])
+            for iidx in range(1, len(chunk)):
+                vxframe.concat(vx.open(chunk[iidx]))
+
             vxframe.drop('index').export_hdf5(
                 os.path.join(self.vxstore, f'temp{idx}.hdf5'))
             vxframe.close_files()
