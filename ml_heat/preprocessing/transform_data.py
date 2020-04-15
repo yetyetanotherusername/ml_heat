@@ -540,12 +540,8 @@ class DataTransformer(object):
             filtered_orga_ids = self.organisation_ids
         else:
             files = os.listdir(temp_path)
-            processed_orgas = list(
-                set([self.organisation_id_for_animal_id(file)
-                     for file in files]))
-
             filtered_orga_ids = [
-                x for x in self.organisation_ids if x not in processed_orgas]
+                x for x in self.organisation_ids if x not in files]
 
         # TODO: try running the organisation loop in processes now that memory
         # usage is fixed
