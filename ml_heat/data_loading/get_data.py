@@ -11,8 +11,8 @@ from tqdm import tqdm
 from collections import defaultdict
 from sxapi import LowLevelAPI, APIv2
 from sxapi.low import PrivateAPIv2
-from anthilldb.settings import LiveConfig
 from anthilldb.client import DirectDBClient
+from anthilldb.settings import get_config_by_name
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -24,6 +24,8 @@ with open(os.path.abspath(os.path.join(os.getcwd(), 'token.json'))) as file:
     doc = json.load(file)
     live_token_string = doc['live']
     staging_token_string = doc['staging']
+
+LIVECONFIG = get_config_by_name('live')
 
 PRIVATE_STAGING_TOKEN = staging_token_string
 
@@ -74,11 +76,11 @@ class DataLoader(object):
             private_endpoint=PRIVATE_ENDPOINT).privatelow
 
         self.dbclient = DirectDBClient(
-            project_id=LiveConfig.GCP_PROJECT_ID,
-            instance_id=LiveConfig.GCP_INSTANCE_ID,
+            project_id=LIVECONFIG.GCP_PROJECT_ID,
+            instance_id=LIVECONFIG.GCP_INSTANCE_ID,
             credentials=None,
-            table_prefix=LiveConfig.TABLE_PREFIX,
-            metric_definition=LiveConfig.METRICS,
+            table_prefix=LIVECONFIG.TABLE_PREFIX,
+            metric_definition=LIVECONFIG.METRICS,
             pool_size=30)
 
         self.thread_pool = ThreadPoolExecutor(30)
@@ -392,6 +394,18 @@ class DataLoader(object):
         print('Cleaning up...')
         os.rmdir(temp_path)
         print('Done!')
+
+    # def count_animals(self):
+
+    def animal_count_per_orga(self):
+        organisation_ids = self.organisation_ids
+
+        data = {}
+        for organisation_id in organisation_ids:
+            animal_ids = self.animal_ids_for_organisations(organisation_id)
+            data[organisation_id] = len(animal_ids)
+
+        return pd.DataFrame(data)
 
     def run(self, organisation_ids=None, update=False):
         self.load_organisations(update)
