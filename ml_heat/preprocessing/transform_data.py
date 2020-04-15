@@ -6,6 +6,7 @@ import json
 import pickle
 import h5py as h5
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -438,10 +439,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
         animal_ids = list(filter(
             lambda x: x != 'organisation', animal_ids))
 
-        # out of ram constraints, we cannot process such big organisations
-        if len(animal_ids) > 2000:
-            return organisation
-
         framelist = []
         for animal_id in tqdm(
                 animal_ids,
@@ -469,18 +466,24 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     groups = frame.index.unique(level='group_id')
 
-    reslist = []
-    for group in tqdm(
-            groups,
-            leave=False,
-            desc=f'Thread {position - 1} group loop',
-            position=position):
+    animal_ids = frame.index.unique(level='animal_id')
 
-        subframe = frame.loc[
-            (group, slice(None), slice(None)), slice(None)]
-        reslist.append(add_group_feature(subframe))
+    # out of ram constraints, we cannot process such big organisations
+    if len(animal_ids) < 2000:
+        reslist = []
+        for group in tqdm(
+                groups,
+                leave=False,
+                desc=f'Thread {position - 1} group loop',
+                position=position):
 
-    frame = pd.concat(reslist, sort=False)
+            subframe = frame.loc[
+                (group, slice(None), slice(None)), slice(None)]
+            reslist.append(add_group_feature(subframe))
+
+        frame = pd.concat(reslist, sort=False)
+    else:
+        frame['act_group_mean'] = np.nan
 
     frame['organisation_id'] = organisation_id
     frame = frame.set_index(['organisation_id', frame.index])
