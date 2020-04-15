@@ -1,6 +1,3 @@
-vaex
-vaex-ml
--e git://github.com/vaexio/vaex.git#egg=vaex
 h5py
 pycodestyle
 tqdm
