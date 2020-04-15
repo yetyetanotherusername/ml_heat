@@ -486,19 +486,22 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = frame.set_index(['organisation_id', frame.index])
     frame = frame.sort_index()
 
-    animal_ids = frame.index.unique(level='animal_id')
+    write_path = os.path.join(temp_path, organisation_id)
+    with open(write_path, 'wb') as writefile:
+        pickle.dump(frame, writefile)
 
-    reslist = []
-    for animal_id in tqdm(
-            animal_ids,
-            leave=False,
-            desc=f'Thread {position - 1} pickle loop',
-            position=position):
+    # animal_ids = frame.index.unique(level='animal_id')
 
-        subframe = frame.loc[
-            (slice(None), slice(None), animal_id, slice(None)), slice(None)]
+    # for animal_id in tqdm(
+    #         animal_ids,
+    #         leave=False,
+    #         desc=f'Thread {position - 1} pickle loop',
+    #         position=position):
 
-        pickle_animal(subframe, animal_id, temp_path)
+    #     subframe = frame.loc[
+    #         (slice(None), slice(None), animal_id, slice(None)), slice(None)]
+
+    #     pickle_animal(subframe, animal_id, temp_path)
 
     return organisation_id
 
