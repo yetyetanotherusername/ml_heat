@@ -6,7 +6,6 @@ import json
 import pickle
 import h5py as h5
 import pandas as pd
-import numpy as np
 from tqdm import tqdm
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -16,7 +15,8 @@ from sxutils.munch.cyclemunch import cycle_munchify
 from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 
 from ml_heat.helper import (
-    plot_setup
+    plot_setup,
+    load_organisation_from_hdf5
 )
 
 
@@ -439,6 +439,10 @@ def transform_organisation(organisation_id, readpath, temp_path):
         animal_ids = list(filter(
             lambda x: x != 'organisation', animal_ids))
 
+        # out of ram constraints, we cannot process such big organisations
+        if len(animal_ids) > 1500:
+            return organisation_id
+
         framelist = []
         for animal_id in tqdm(
                 animal_ids,
@@ -466,24 +470,18 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     groups = frame.index.unique(level='group_id')
 
-    animal_ids = frame.index.unique(level='animal_id')
+    reslist = []
+    for group in tqdm(
+            groups,
+            leave=False,
+            desc=f'Thread {position - 1} group loop',
+            position=position):
 
-    # out of ram constraints, we cannot process such big organisations
-    if len(animal_ids) < 2000:
-        reslist = []
-        for group in tqdm(
-                groups,
-                leave=False,
-                desc=f'Thread {position - 1} group loop',
-                position=position):
+        subframe = frame.loc[
+            (group, slice(None), slice(None)), slice(None)]
+        reslist.append(add_group_feature(subframe))
 
-            subframe = frame.loc[
-                (group, slice(None), slice(None)), slice(None)]
-            reslist.append(add_group_feature(subframe))
-
-        frame = pd.concat(reslist, sort=False)
-    else:
-        frame['act_group_mean'] = np.nan
+    frame = pd.concat(reslist, sort=False)
 
     frame['organisation_id'] = organisation_id
     frame = frame.set_index(['organisation_id', frame.index])
@@ -492,19 +490,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
     write_path = os.path.join(temp_path, organisation_id)
     with open(write_path, 'wb') as writefile:
         pickle.dump(frame, writefile)
-
-    # animal_ids = frame.index.unique(level='animal_id')
-
-    # for animal_id in tqdm(
-    #         animal_ids,
-    #         leave=False,
-    #         desc=f'Thread {position - 1} pickle loop',
-    #         position=position):
-
-    #     subframe = frame.loc[
-    #         (slice(None), slice(None), animal_id, slice(None)), slice(None)]
-
-    #     pickle_animal(subframe, animal_id, temp_path)
 
     return organisation_id
 
@@ -582,8 +567,7 @@ class DataTransformer(object):
         min_itemsize = 10
         itemsize_dict = {
             'race': min_itemsize,
-            'country': min_itemsize,
-            'partner_id': min_itemsize
+            'country': min_itemsize
         }
 
         with pd.HDFStore(self.train_store_path) as train_store:
@@ -653,13 +637,10 @@ class DataTransformer(object):
 
     def test(self):
         plt = plot_setup()
-        frame = pd.read_hdf(
-            self.train_store_path,
-            key='dataset',
-            where=f'organisation_id=="59e7515edb84e482acce8339"')
 
-        print(frame)
-        assert False
+        frame = load_organisation_from_hdf5(
+            self.train_store_path, '59e7515edb84e482acce8339')
+
         frame = frame.loc[(
             slice(None),
             slice(None),
