@@ -4,24 +4,19 @@
 import os
 import json
 import pickle
-import vaex as vx
-import vaex.ml.transformations as tf
 import h5py as h5
 import pandas as pd
-import numpy as np
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
 from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 
 from ml_heat.helper import (
-    load_vxframe,
-    pandas_to_vaex,
     plot_setup,
-    load_data
+    load_organisation_from_hdf5
 )
 
 
@@ -445,8 +440,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
             lambda x: x != 'organisation', animal_ids))
 
         # out of ram constraints, we cannot process such big organisations
-        if len(animal_ids) > 2000:
-            return organisation
+        if len(animal_ids) > 1500:
+            return organisation_id
 
         framelist = []
         for animal_id in tqdm(
@@ -492,43 +487,11 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = frame.set_index(['organisation_id', frame.index])
     frame = frame.sort_index()
 
-    animal_ids = frame.index.unique(level='animal_id')
-
-    reslist = []
-    for animal_id in tqdm(
-            animal_ids,
-            leave=False,
-            desc=f'Thread {position - 1} pickle loop',
-            position=position):
-
-        subframe = frame.loc[
-            (slice(None), slice(None), animal_id, slice(None)), slice(None)]
-
-        pickle_animal(subframe, animal_id, temp_path)
+    write_path = os.path.join(temp_path, organisation_id)
+    with open(write_path, 'wb') as writefile:
+        pickle.dump(frame, writefile)
 
     return organisation_id
-
-
-def store_vaex_hdf5(filepath, storepath):
-    with open(filepath, 'rb') as file:
-        frame = pickle.load(file)
-
-    if frame.empty:
-        os.remove(filepath)
-        return filepath
-
-    frame.race = frame.race.astype('str')
-    frame.country = frame.country.astype('str')
-    # frame.partner_id = frame.partner_id.astype('str')
-
-    vxframe = pandas_to_vaex(frame)
-    del frame
-    vxfilepath = os.path.join(
-        storepath, os.path.basename(filepath) + '.hdf5')
-    vxframe.export_hdf5(vxfilepath)
-    vxframe.close_files()
-    os.remove(filepath)
-    return filepath
 
 
 class DataTransformer(object):
@@ -536,14 +499,10 @@ class DataTransformer(object):
         self._organisation_ids = organisation_ids
         self.store_path = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__')
-        self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
-        self.vxstore = os.path.join(self.store_path, 'vaex_store')
-        self.load_vxframe = load_vxframe
+        self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         if not os.path.exists(self.store_path):
             os.mkdir(self.store_path)
-        if not os.path.exists(self.vxstore):
-            os.mkdir(self.vxstore)
 
         self._animal_orga_map = None
 
@@ -566,12 +525,8 @@ class DataTransformer(object):
             filtered_orga_ids = self.organisation_ids
         else:
             files = os.listdir(temp_path)
-            processed_orgas = list(
-                set([self.organisation_id_for_animal_id(file)
-                     for file in files]))
-
             filtered_orga_ids = [
-                x for x in self.organisation_ids if x not in processed_orgas]
+                x for x in self.organisation_ids if x not in files]
 
         # TODO: try running the organisation loop in processes now that memory
         # usage is fixed
@@ -609,69 +564,45 @@ class DataTransformer(object):
         files = os.listdir(temp_path)
         filepaths = [os.path.join(temp_path, p) for p in files]
 
-        with ProcessPoolExecutor(os.cpu_count()) as process_pool:
-            results = [
-                process_pool.submit(store_vaex_hdf5, filepath, self.vxstore)
-                for filepath in filepaths]
+        min_itemsize = 10
+        itemsize_dict = {
+            'race': min_itemsize,
+            'country': min_itemsize
+        }
 
-            kwargs = {
-                'total': len(filepaths),
-                'unit': 'animals',
-                'unit_scale': True,
-                'leave': True
-            }
+        with pd.HDFStore(self.train_store_path) as train_store:
+            for filepath in tqdm(filepaths):
+                with open(filepath, 'rb') as file:
+                    frame = pickle.load(file)
 
-            for f in tqdm(as_completed(results), **kwargs):
-                pass
+                if frame.empty:
+                    os.remove(filepath)
+                    continue
 
-        vxfiles = [
-            os.path.join(self.vxstore, x) for x in
-            os.listdir(self.vxstore) if x.endswith('.hdf5') and
-            not x.startswith('temp')]
+                frame.race = frame.race.astype('str')
+                frame.country = frame.country.astype('str')
 
-        # can't open too many files at once, so first chunk it :-P
-        # split it into 100 chunks, remove chunks that may be empty
-        chunked = [x for x in np.array_split(vxfiles, 40) if x.size > 0]
+                try:
+                    train_store.append(
+                        key='dataset', value=frame,
+                        min_itemsize=itemsize_dict)
+                    os.remove(filepath)
+                except KeyError as e:
+                    print(e)
+                except ValueError as e:
+                    print(frame)
+                    print(e)
+                except Exception as e:
+                    print(e)
 
-        print('unifying vaex database into chunks')
-
-        for idx, chunk in tqdm(enumerate(chunked), total=len(chunked)):
-            vxframe = vx.open(chunk[0])
-            for iidx in range(1, len(chunk)):
-                vxframe.concat(vx.open(chunk[iidx]))
-
-            vxframe.drop('index').export_hdf5(
-                os.path.join(self.vxstore, f'temp{idx}.hdf5'))
-            vxframe.close_files()
-            for file in chunk:
-                os.remove(file)
-
-        print('unifying chunks into single file')
-        # unify the chunked files into one file :-P
-        vxfiles = [
-            os.path.join(self.vxstore, x) for x in
-            os.listdir(self.vxstore) if x.endswith('.hdf5') and
-            x.startswith('temp')]
-
-        vxframe = vx.open_many(vxfiles)
-
-        vxframe.export_hdf5(
-            os.path.join(self.vxstore, 'traindata.hdf5'))
-
+        print('Finished writing training data...')
         print('Cleaning up...')
         os.rmdir(temp_path)
-        for file in vxfiles:
-            os.remove(file)
         print('Done!')
 
     def clear_data(self):
         if os.path.exists(self.train_store_path):
             os.remove(self.train_store_path)
-
-        if os.path.exists(self.vxstore):
-            vxfiles = os.listdir(self.vxstore)
-            for file in vxfiles:
-                os.remove(os.path.join(self.vxstore, file))
 
     def organisation_id_for_animal_id(self, animal_id):
         if self._animal_orga_map is None:
@@ -704,41 +635,12 @@ class DataTransformer(object):
                     name='organisation',
                     data=json.dumps(organisation))
 
-    def one_hot_encode(self):
-        print('Performing one hot encoding...')
-        frame = self.load_vxframe(self.vxstore)
-        old_cols = frame.get_column_names()
-        string_cols = ['race', 'country']
-        encoder = tf.OneHotEncoder(
-            features=string_cols)
-        frame_encoded = encoder.fit_transform(frame)
-        all_cols = frame_encoded.get_column_names()
-        new_cols = [col for col in all_cols if col not in old_cols]
-        frame_encoded[new_cols].export_hdf5(
-            os.path.join(self.vxstore, 'one_hot.hdf5'),
-            virtual=True)
-        print('Done!')
-
-    def scale_numeric_cols(self):
-        print('Performing data scaling...')
-        frame = self.load_vxframe(self.vxstore)
-        old_cols = frame.get_column_names()
-        numeric_cols = [
-            'act', 'temp', 'temp_filtered', 'DIM', 'act_group_mean'
-        ]
-
-        encoder = tf.RobustScaler(features=numeric_cols)
-        frame_scaled = encoder.fit_transform(frame)
-        all_cols = frame_scaled.get_column_names()
-        new_cols = [col for col in all_cols if col not in old_cols]
-        frame_scaled[new_cols].export_hdf5(
-            os.path.join(self.vxstore, 'scaled.hdf5'),
-            virtual=True)
-        print('Done!')
-
     def test(self):
         plt = plot_setup()
-        frame = load_data(self.vxstore, ['59e7515edb84e482acce8339'])
+
+        frame = load_organisation_from_hdf5(
+            self.train_store_path, '59e7515edb84e482acce8339')
+
         frame = frame.loc[(
             slice(None),
             slice(None),
@@ -799,8 +701,6 @@ class DataTransformer(object):
         self.clear_data()
         self.transform_data()
         self.store_data()
-        self.one_hot_encode()
-        self.scale_numeric_cols()
         # self.test()
 
 
