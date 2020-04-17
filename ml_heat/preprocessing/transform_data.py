@@ -567,8 +567,10 @@ class DataTransformer(object):
             if os.path.exists(self.train_store_path):
                 os.remove(self.train_store_path)
 
-            for organisation_id in self.organisation_ids:
-                os.remove(os.path.join(self.feather_store, organisation_id))
+            for organisation_id in tqdm(self.organisation_ids):
+                file = os.path.join(self.feather_store, organisation_id)
+                if os.path.exists(file):
+                    os.remove(file)
 
     def organisation_id_for_animal_id(self, animal_id):
         if self._animal_orga_map is None:
