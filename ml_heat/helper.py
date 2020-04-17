@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from cycler import cycler
@@ -12,10 +13,11 @@ def plot_setup():
     return plt
 
 
-def load_organisation_from_hdf5(path, organisation_id):
-    frame = pd.read_hdf(
-        path,
-        key='dataset',
-        where=f'organisation_id=="{organisation_id}"')
+def load_organisation(path, organisation_id):
+    frame = pd.read_feather(os.path.join(path, organisation_id))
+    frame = frame.set_index(
+        ['organisation_id', 'group_id', 'animal_id', 'datetime'])
+    return frame
+
 
     return frame

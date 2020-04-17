@@ -3,7 +3,6 @@
 
 import os
 import json
-import pickle
 import h5py as h5
 import pandas as pd
 from tqdm import tqdm
@@ -16,7 +15,7 @@ from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 
 from ml_heat.helper import (
     plot_setup,
-    load_organisation_from_hdf5
+    load_organisation
 )
 
 
@@ -87,6 +86,7 @@ def add_cyclic(inframe, animal):
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
     span = pd.Timedelta(hours=12)
+    on_span = pd.Timedelta(hours=4)
     for dt in cyclic_dts:
         idx = None
         from_dt = dt - span
@@ -97,7 +97,9 @@ def add_cyclic(inframe, animal):
         except ValueError:
             continue
 
-        inframe.cyclic.at[idx] = True
+        start = idx - on_span
+        end = idx + on_span
+        inframe.cyclic[start:end] = True
     return inframe
 
 
@@ -131,6 +133,7 @@ def add_inseminated(inframe, animal):
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
     span = pd.Timedelta(hours=12)
+    on_span = pd.Timedelta(hours=4)
     for dt in insemination_dts:
         idx = None
         from_dt = dt - span
@@ -141,7 +144,9 @@ def add_inseminated(inframe, animal):
         except ValueError:
             continue
 
-        inframe.inseminated.at[idx] = True
+        start = idx - on_span
+        end = idx + on_span
+        inframe.cyclic[start:end] = True
     return inframe
 
 
@@ -205,6 +210,7 @@ def add_pregnant(inframe, animal):
     # find indices closest to pregnant heats and set pregnant column to true
     # if no matching index is found inside tolerance of 24h, disregard
     span = pd.Timedelta(hours=12)
+    on_span = pd.Timedelta(hours=4)
     for dt in pregnant_ts:
         idx = None
         from_dt = dt - span
@@ -215,7 +221,9 @@ def add_pregnant(inframe, animal):
         except ValueError:
             continue
 
-        inframe.pregnant.at[idx] = True
+        start = idx - on_span
+        end = idx + on_span
+        inframe.pregnant[start:end] = True
     return inframe
 
 
@@ -245,6 +253,7 @@ def add_deleted(inframe, animal, events):
                 detected_heats.remove(undeleted)
 
     span = pd.Timedelta(hours=12)
+    on_span = pd.Timedelta(hours=4)
     for dt in detected_heats:
         idx = None
         from_dt = dt - span
@@ -255,7 +264,9 @@ def add_deleted(inframe, animal, events):
         except ValueError:
             continue
 
-        inframe.deleted.at[idx] = True
+        start = idx - on_span
+        end = idx + on_span
+        inframe.deleted[start:end] = True
     return inframe
 
 
@@ -420,14 +431,6 @@ def transform_animal(organisation, animal_id, readpath, readfile):
     return data
 
 
-def pickle_animal(frame, animal_id, temp_path):
-    write_path = os.path.join(temp_path, animal_id)
-    with open(write_path, 'wb') as writefile:
-        pickle.dump(frame, writefile)
-
-    return animal_id
-
-
 def transform_organisation(organisation_id, readpath, temp_path):
     position = multiprocessing.current_process()._identity[0] + 1
     with h5.File(readpath, 'r') as readfile:
@@ -469,8 +472,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = frame.sort_index()
 
     groups = frame.index.unique(level='group_id')
-
     reslist = []
+    position = multiprocessing.current_process()._identity[0] + 1
     for group in tqdm(
             groups,
             leave=False,
@@ -486,21 +489,22 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame['organisation_id'] = organisation_id
     frame = frame.set_index(['organisation_id', frame.index])
     frame = frame.sort_index()
-
     write_path = os.path.join(temp_path, organisation_id)
-    with open(write_path, 'wb') as writefile:
-        pickle.dump(frame, writefile)
+    frame = frame.reset_index()
+    frame.to_feather(write_path)
 
     return organisation_id
 
 
 class DataTransformer(object):
-    def __init__(self, organisation_ids=None):
+    def __init__(self, organisation_ids=None, update=False):
         self._organisation_ids = organisation_ids
         self.store_path = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__')
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
+        self.feather_store = os.path.join(self.store_path, 'feather_store')
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
+        self.update = update
         if not os.path.exists(self.store_path):
             os.mkdir(self.store_path)
 
@@ -518,8 +522,8 @@ class DataTransformer(object):
 
     def transform_data(self):
         print('Transforming data...')
-        # create temp storage folder
-        temp_path = os.path.join(self.store_path, 'preprocessing_temp')
+
+        temp_path = self.feather_store
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
             filtered_orga_ids = self.organisation_ids
@@ -558,51 +562,13 @@ class DataTransformer(object):
             for f in tqdm(as_completed(results), **kwargs):
                 pass
 
-    def store_data(self):
-        print('Writing data to hdf file...')
-        temp_path = os.path.join(self.store_path, 'preprocessing_temp')
-        files = os.listdir(temp_path)
-        filepaths = [os.path.join(temp_path, p) for p in files]
-
-        min_itemsize = 10
-        itemsize_dict = {
-            'race': min_itemsize,
-            'country': min_itemsize
-        }
-
-        with pd.HDFStore(self.train_store_path) as train_store:
-            for filepath in tqdm(filepaths):
-                with open(filepath, 'rb') as file:
-                    frame = pickle.load(file)
-
-                if frame.empty:
-                    os.remove(filepath)
-                    continue
-
-                frame.race = frame.race.astype('str')
-                frame.country = frame.country.astype('str')
-
-                try:
-                    train_store.append(
-                        key='dataset', value=frame,
-                        min_itemsize=itemsize_dict)
-                    os.remove(filepath)
-                except KeyError as e:
-                    print(e)
-                except ValueError as e:
-                    print(frame)
-                    print(e)
-                except Exception as e:
-                    print(e)
-
-        print('Finished writing training data...')
-        print('Cleaning up...')
-        os.rmdir(temp_path)
-        print('Done!')
-
     def clear_data(self):
-        if os.path.exists(self.train_store_path):
-            os.remove(self.train_store_path)
+        if self.update is True:
+            if os.path.exists(self.train_store_path):
+                os.remove(self.train_store_path)
+
+            for organisation_id in self.organisation_ids:
+                os.remove(os.path.join(self.feather_store, organisation_id))
 
     def organisation_id_for_animal_id(self, animal_id):
         if self._animal_orga_map is None:
@@ -638,8 +604,8 @@ class DataTransformer(object):
     def test(self):
         plt = plot_setup()
 
-        frame = load_organisation_from_hdf5(
-            self.train_store_path, '59e7515edb84e482acce8339')
+        frame = load_organisation(
+            self.feather_store, '59e7515edb84e482acce8339')
 
         frame = frame.loc[(
             slice(None),
@@ -649,48 +615,43 @@ class DataTransformer(object):
             :
         ].reset_index().set_index('datetime')
 
-        frame.loc[
+        ax = frame.loc[
             :, ('act', 'temp', 'temp_filtered', 'act_group_mean', 'DIM')
         ].plot()
 
-        cyclic = frame[frame.cyclic == True].index.to_list()  # noqa
-        inseminated = frame[
-            frame.inseminated == True].index.to_list()  # noqa
-        pregnant = frame[frame.pregnant == True].index.to_list()  # noqa
-        deleted = frame[frame.deleted == True].index.to_list()  # noqa
+        ymin, ymax = ax.get_ylim()
 
-        td = pd.Timedelta(hours=4)
-        for x in cyclic:
-            xmin = x - td
-            xmax = x + td
-            plt.axvspan(
-                xmin, xmax, color='g', alpha=0.5,
-                label='cyclic heats'
-            )
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.cyclic.to_numpy(),
+            facecolor='g',
+            alpha=0.5,
+            label='cyclic heats'
+        )
 
-        for x in inseminated:
-            xmin = x - td
-            xmax = x + td
-            plt.axvspan(
-                xmin, xmax, color='y', alpha=0.5,
-                label='inseminated heats'
-            )
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.inseminated.to_numpy(),
+            facecolor='y',
+            alpha=0.5,
+            label='inseminated heats'
+        )
 
-        for x in pregnant:
-            xmin = x - td
-            xmax = x + td
-            plt.axvspan(
-                xmin, xmax, color='b', alpha=0.5,
-                label='pregnant heats'
-            )
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.pregnant.to_numpy(),
+            facecolor='b',
+            alpha=0.5,
+            label='pregnant heats'
+        )
 
-        for x in deleted:
-            xmin = x - td
-            xmax = x + td
-            plt.axvspan(
-                xmin, xmax, color='r', alpha=0.5,
-                label='deleted heats'
-            )
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.deleted.to_numpy(),
+            facecolor='r',
+            alpha=0.5,
+            label='deleted heats'
+        )
 
         plt.legend()
 
@@ -700,12 +661,12 @@ class DataTransformer(object):
     def run(self):
         self.clear_data()
         self.transform_data()
-        self.store_data()
+        self.test()
         # self.test()
 
 
 def main():
-    transformer = DataTransformer(['59e7515edb84e482acce8339'])
+    transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
     # transformer = DataTransformer()
     transformer.run()
 
