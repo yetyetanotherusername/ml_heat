@@ -1,72 +1,59 @@
-# import xgboost as xg
-import vaex as vx
+import xgboost as xg
 import numpy as np
-
+import pandas as pd
 from ml_heat.preprocessing.transform_data import DataTransformer
 
 from ml_heat.helper import (
-    load_data,
-    load_vxframe,
-    animal_count_per_orga,
-    vaex_to_pandas
+    load_organisation,
+    duplicate_shift
 )
 
-
-@vx.register_dataframe_accessor('mlheat', override=True)
-class mlheat:
-    def __init__(self, df):
-        self.df = df
-
-    def shift(self, column, n, inplace=False):
-        # make a copy without column
-        df = self.df.copy().drop(column)
-        # make a copy with just the colum
-        df_column = self.df[[column]]
-        # slice off the head and tail
-        df_head = df_column[-n:]
-        df_tail = df_column[:-n]
-        # stitch them together
-        df_shifted = df_tail.concat(df_head)
-        print(df_shifted)
-        # and join (based on row number)
-        return df.join(df_shifted, inplace=inplace)
+tf = DataTransformer()
 
 
 class GradientBoostedTrees(object):
     def __init__(self, organisation_ids=None):
         self.organisation_ids = organisation_ids
-        self.vxstore = DataTransformer().vxstore
-        self.data = load_vxframe(self.vxstore)
+        self.store = tf.feather_store
+        if self.organisation_ids is None:
+            organisation_ids = tf.organisation_ids
 
-    # def prepare_data(self):
-    #     x = np.arange(10)
-    #     y = x**2
-    #     df = vx.from_arrays(x=x, y=y)
-    #     df['shifted_y'] = df.y
-    #     df = df.mlheat.shift('shifted_y', 2)
-    #     print(df)
+    def prepare_animal(self, organisation_id):
+        data = load_organisation(self.store, organisation_id)
+        data = data.loc[(
+            slice(None),
+            slice(None),
+            '59e75f2b9e182f68cf25721d',
+            slice(None)
+        ), slice(None)]
 
-    def prepare_data(self):
-        data = self.data[
-            self.data.organisation_id == '5b84ecc2f812a709c8b0cc23']
-        data = data.drop(
-            ['organisation_id',
-             'temp',
-             'temp_filtered',
-             'race',
-             'country',
-             'deleted',
-             'group_id'])
-        data = data.to_pandas_df().dropna().set_index(
-            ['animal_id', 'datetime']).sort_index()
-        print(data)
+        data = data.droplevel(['organisation_id', 'group_id', 'animal_id'])
 
-    def test(self):
-        transformer = DataTransformer()
-        print(transformer.organisation_ids)
-        print(
-            animal_count_per_orga(
-                transformer.readfile, transformer.organisation_ids))
+        data['annotation'] = np.logical_or(
+            np.logical_or(data.pregnant, data.cyclic), data.inseminated)
+
+        data = data.drop([
+            'race',
+            'country',
+            'temp',
+            'temp_filtered',
+            'pregnant',
+            'cyclic',
+            'inseminated',
+            'deleted'
+        ], axis=1)
+
+        days = 1
+        shift = days * 144
+
+        act_shift = duplicate_shift(data.act, shift, 'act')
+        group_shift = duplicate_shift(
+            data.act_group_mean, shift, 'act_group_mean')
+
+        data = pd.concat([data, act_shift, group_shift], axis=1)
+        data = data.drop(['act', 'act_group_mean'], axis=1)
+        data = data.dropna()
+        print(data.info())
 
     def run(self):
         self.prepare_data()
