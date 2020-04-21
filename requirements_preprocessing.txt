@@ -4,5 +4,5 @@ pandas
 matplotlib
 tables
 -e git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
-vaex
+pyarrow
 six>=1.12.0

@@ -1,3 +1,4 @@
+pyarrow
 h5py
 pycodestyle
 tqdm
