@@ -20,9 +20,10 @@ def load_organisation(path, organisation_id):
     return frame
 
 
-def duplicate_shift(series, shift, name=None):
-    frame = pd.concat([series] * shift, axis=1)
-    frame.columns = range(shift)
+def duplicate_shift(series, shifts, name=None):
+    n_cols = len(shifts)
+    frame = pd.concat([series] * n_cols, axis=1)
+    frame.columns = shifts
     frame = frame.apply(lambda x: x.shift(int(x.name)))
     if name is not None:
         frame.columns = [f'{name}{column}' for column in frame.columns]

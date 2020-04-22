@@ -5,7 +5,7 @@ tqdm
 pandas
 numpy
 scipy
-scikit-learn
+sklearn
 tensorflow-gpu
 keras
 matplotlib
