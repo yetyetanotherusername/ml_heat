@@ -6,8 +6,7 @@ pandas
 numpy
 scipy
 sklearn
-tensorflow-gpu
-keras
+torch
 matplotlib
 tables
 marshmallow<3.0

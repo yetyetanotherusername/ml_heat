@@ -4,6 +4,7 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report
 
 import torch
 import torch.nn as nn
@@ -51,7 +52,14 @@ class TrainData(Dataset):
 
 
 class TestData(Dataset):
-    pass
+    def __init__(self, x):
+        self.x = x
+
+    def __getitem__(self, index):
+        return self.x[index]
+
+    def __len__(self):
+        return len(self.x)
 
 
 class NaiveFNN(object):
@@ -134,6 +142,8 @@ class NaiveFNN(object):
         traindata = TrainData(torch.FloatTensor(self.x),
                               torch.FloatTensor(self.y))
 
+        testdata = TestData(torch.FloatTensor(self.x_test))
+
         trainloader = DataLoader(
             dataset=traindata,
             batch_size=50000,
@@ -141,12 +151,12 @@ class NaiveFNN(object):
             num_workers=4
         )
 
-        # testloader = torch.utils.data.DataLoader(
-        #     testset,
-        #     batch_size=4,
-        #     shuffle=False,
-        #     num_workers=2
-        # )
+        testloader = torch.utils.data.DataLoader(
+            testdata,
+            batch_size=1,
+            shuffle=False,
+            num_workers=4
+        )
 
         for e in range(self.epochs):  # loop over the dataset multiple times
             epoch_loss = 0
@@ -173,6 +183,20 @@ class NaiveFNN(object):
                   f'Acc: {epoch_acc/len(trainloader):.3f}')
 
         print('Finished Training')
+
+        y_pred_list = []
+
+        sxnet.eval()
+        with torch.no_grad():
+            for x in testloader:
+                x = x.to(device)
+                y_test_pred = sxnet(x)
+                y_test_pred = torch.sigmoid(y_test_pred)
+                y_pred_tag = torch.round(y_test_pred)
+                y_pred_list.append(y_pred_tag.cpu().numpy())
+        y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
+
+        print(classification_report(self.y_test, y_pred_list))
 
     def prepare_organisation(self, organisation_id):
         data = load_organisation(self.store, organisation_id)
