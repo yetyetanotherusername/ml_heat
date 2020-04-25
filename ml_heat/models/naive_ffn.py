@@ -69,8 +69,8 @@ class NaiveFNN(object):
         if self.organisation_ids is None:
             self.organisation_ids = os.listdir(self.store)
         self.animal = None
-        self.x = pd.DataFrame()
-        self.y = pd.Series()
+        self.x = None
+        self.y = None
         self.x_test = None
         self.y_test = None
 
@@ -112,8 +112,9 @@ class NaiveFNN(object):
         data = data.dropna()
         data.DIM = pd.to_numeric(data.DIM, downcast='signed')
         data.annotation = data.annotation.astype(int)
-        self.y = self.y.append(data.annotation)
-        self.x = self.x.append(data.drop('annotation', axis=1))
+
+        self.y_list.append(data.annotation.values)
+        self.x_list.append(data.drop('annotation', axis=1))
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -196,12 +197,19 @@ class NaiveFNN(object):
                 y_pred_list.append(y_pred_tag.cpu().numpy())
         y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
 
-        print(classification_report(self.y_test, y_pred_list))
+        print(classification_report(
+            self.y_test, y_pred_list,
+            target_names=['no heat', 'heat'],
+            digits=6
+        ))
 
     def prepare_organisation(self, organisation_id):
         data = load_organisation(self.store, organisation_id)
 
         animal_ids = data.index.unique(level='animal_id')
+
+        self.x_list = []
+        self.y_list = []
 
         for animal_id in tqdm(animal_ids):
             self.animal = data.loc[(
@@ -213,9 +221,15 @@ class NaiveFNN(object):
 
             self.prepare_animal()
 
+        self.x = np.concatenate(self.x_list)
+        self.y = np.concatenate(self.y_list)
+
     def split_data(self):
         self.x, self.x_test, self.y, self.y_test = train_test_split(
             self.x, self.y, test_size=0.33, random_state=42)
+
+    def loop_organisations(self):
+        pass
 
     def run(self):
         self.prepare_organisation('59e7515edb84e482acce8339')
