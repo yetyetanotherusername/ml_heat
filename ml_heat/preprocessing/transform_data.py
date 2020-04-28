@@ -15,7 +15,7 @@ from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 
 from ml_heat.helper import (
     plot_setup,
-    load_organisation
+    load_animal
 )
 
 
@@ -406,6 +406,10 @@ def transform_animal(organisation, animal_id, readpath, readfile):
 
     animal = json.loads(
         readfile[f'data/{organisation_id}/{animal_id}/animal'][()])
+
+    if animal.get('group_id') is None:
+        return None
+
     events = json.loads(
         readfile[f'data/{organisation_id}/{animal_id}/events'][()])
 
@@ -485,13 +489,25 @@ def transform_organisation(organisation_id, readpath, temp_path):
         reslist.append(add_group_feature(subframe))
 
     frame = pd.concat(reslist, sort=False)
-
+    frame = frame.dropna(subset=['DIM', 'act', 'act_group_mean'])
     frame['organisation_id'] = organisation_id
     frame = frame.set_index(['organisation_id', frame.index])
     frame = frame.sort_index()
-    write_path = os.path.join(temp_path, organisation_id)
-    frame = frame.reset_index()
-    frame.to_feather(write_path)
+
+    animal_ids = frame.index.unique(level='animal_id')
+    position = multiprocessing.current_process()._identity[0] + 1
+    for animal_id in tqdm(
+            animal_ids,
+            leave=False,
+            desc=f'Thread {position - 1} storage loop',
+            position=position):
+
+        animal = frame.loc[
+            (slice(None), slice(None), animal_id, slice(None)), slice(None)]
+
+        write_path = os.path.join(temp_path, animal_id)
+        animal = animal.reset_index()
+        animal.to_feather(write_path)
 
     return organisation_id
 
@@ -529,8 +545,12 @@ class DataTransformer(object):
             filtered_orga_ids = self.organisation_ids
         else:
             files = os.listdir(temp_path)
+            loaded_orgas = list(
+                set([self.organisation_id_for_animal_id(file)
+                     for file in files])
+            )
             filtered_orga_ids = [
-                x for x in self.organisation_ids if x not in files]
+                x for x in self.organisation_ids if x not in loaded_orgas]
 
         # TODO: try running the organisation loop in processes now that memory
         # usage is fixed
@@ -556,7 +576,8 @@ class DataTransformer(object):
                 'unit_scale': True,
                 'leave': True,
                 'desc': 'Total progress',
-                'position': 1
+                'position': 1,
+                'smoothing': 0
             }
 
             for f in tqdm(as_completed(results), **kwargs):
@@ -567,8 +588,8 @@ class DataTransformer(object):
             if os.path.exists(self.train_store_path):
                 os.remove(self.train_store_path)
 
-            for organisation_id in tqdm(self.organisation_ids):
-                file = os.path.join(self.feather_store, organisation_id)
+            for animal_id in tqdm(os.listdir(self.feather_store)):
+                file = os.path.join(self.feather_store, animal_id)
                 if os.path.exists(file):
                     os.remove(file)
 
@@ -606,16 +627,8 @@ class DataTransformer(object):
     def test(self):
         plt = plot_setup()
 
-        frame = load_organisation(
-            self.feather_store, '59e7515edb84e482acce8339')
-
-        frame = frame.loc[(
-            slice(None),
-            slice(None),
-            '59e75f2b9e182f68cf25721d',
-            slice(None)),
-            :
-        ].reset_index().set_index('datetime')
+        frame = load_animal(self.feather_store, '59e75f2b9e182f68cf25721d')
+        frame = frame.reset_index().set_index('datetime')
 
         ax = frame.loc[
             :, ('act', 'temp', 'temp_filtered', 'act_group_mean', 'DIM')

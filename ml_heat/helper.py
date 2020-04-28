@@ -13,8 +13,8 @@ def plot_setup():
     return plt
 
 
-def load_organisation(path, organisation_id):
-    frame = pd.read_feather(os.path.join(path, organisation_id))
+def load_animal(path, animal_id):
+    frame = pd.read_feather(os.path.join(path, animal_id))
     frame = frame.set_index(
         ['organisation_id', 'group_id', 'animal_id', 'datetime'])
     return frame
