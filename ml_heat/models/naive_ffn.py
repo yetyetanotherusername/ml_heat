@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from ml_heat.preprocessing.transform_data import DataTransformer
 
 from ml_heat.helper import (
-    load_organisation,
+    load_animal,
     duplicate_shift
 )
 
@@ -39,49 +39,23 @@ class SXNet(nn.Module):
         return y
 
 
-class TrainData(Dataset):
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __getitem__(self, index):
-        return self.x[index], self.y[index]
+class Data(Dataset):
+    def __init__(self, animal_ids, path):
+        self.animal_ids = animal_ids
+        self.store = path
+        self.scaler = StandardScaler()
 
     def __len__(self):
-        return len(self.x)
-
-
-class TestData(Dataset):
-    def __init__(self, x):
-        self.x = x
+        return len(self.animal_ids)
 
     def __getitem__(self, index):
-        return self.x[index]
+        animal_id = self.animal_ids[index]
+        x, y = self.prepare_animal(animal_id)
 
-    def __len__(self):
-        return len(self.x)
+        return torch.FloatTensor(x), torch.FloatTensor(y)
 
-
-class NaiveFNN(object):
-    def __init__(self, organisation_ids=None):
-        self.organisation_ids = organisation_ids
-        self.store = dt.feather_store
-        if self.organisation_ids is None:
-            self.organisation_ids = os.listdir(self.store)
-        self.animal = None
-        self.x = None
-        self.y = None
-        self.x_test = None
-        self.y_test = None
-
-        self.learning_rate = 0.01
-        self.momentum = 0.9
-        self.epochs = 50
-
-    def prepare_animal(self):
-        data = self.animal
-
-        # data = data.droplevel(['organisation_id', 'group_id', 'animal_id'])
+    def prepare_animal(self, animal_id):
+        data = load_animal(self.store, animal_id)
 
         data['annotation'] = np.logical_or(
             np.logical_or(data.pregnant, data.cyclic), data.inseminated)
@@ -113,8 +87,34 @@ class NaiveFNN(object):
         data.DIM = pd.to_numeric(data.DIM, downcast='signed')
         data.annotation = data.annotation.astype(int)
 
-        self.y_list.append(data.annotation.values)
-        self.x_list.append(data.drop('annotation', axis=1))
+        y = data.annotation.values
+        x = data.drop('annotation', axis=1).values
+
+        x = self.scaler.fit_transform(x)
+
+        return x, y
+
+
+class NaiveFNN(object):
+    def __init__(self, animal_ids=None):
+        self.animal_ids = animal_ids
+        self.store = dt.feather_store
+        if self.animal_ids is None:
+            self.animal_ids = os.listdir(self.store)[:200]
+        self.animal = None
+        self.x = None
+        self.y = None
+        self.x_test = None
+        self.y_test = None
+
+        self.learning_rate = 0.01
+        self.momentum = 0.9
+        self.epochs = 2
+
+        train_animals, test_animals = train_test_split(
+            self.animal_ids, test_size=0.33, random_state=42)
+
+        self.partition = {'train': train_animals, 'validation': test_animals}
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -126,7 +126,10 @@ class NaiveFNN(object):
         return acc
 
     def train(self):
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda:0" if use_cuda else "cpu")
+        torch.backends.cudnn.benchmark = True
+
         sxnet = SXNet()
         sxnet.to(device)
         optimizer = optim.Adam(
@@ -136,23 +139,17 @@ class NaiveFNN(object):
 
         criterion = nn.BCEWithLogitsLoss()
 
-        scaler = StandardScaler()
-        self.x = scaler.fit_transform(self.x)
-        self.x_test = scaler.fit_transform(self.x_test)
-
-        traindata = TrainData(torch.FloatTensor(self.x),
-                              torch.FloatTensor(self.y))
-
-        testdata = TestData(torch.FloatTensor(self.x_test))
+        traindata = Data(self.partition['train'], self.store)
+        testdata = Data(self.partition['validation'], self.store)
 
         trainloader = DataLoader(
             dataset=traindata,
-            batch_size=50000,
+            batch_size=1,
             shuffle=True,
             num_workers=4
         )
 
-        testloader = torch.utils.data.DataLoader(
+        testloader = DataLoader(
             testdata,
             batch_size=1,
             shuffle=False,
@@ -162,10 +159,9 @@ class NaiveFNN(object):
         for e in range(self.epochs):  # loop over the dataset multiple times
             epoch_loss = 0
             epoch_acc = 0
-            for x, y in trainloader:
+            for x, y in tqdm(trainloader, desc='epoch progress'):
                 x = x.to(device)
-                y = y.unsqueeze(1).to(device)
-
+                y = y.T.unsqueeze(0).to(device)
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
@@ -186,16 +182,18 @@ class NaiveFNN(object):
         print('Finished Training')
 
         y_pred_list = []
-
+        y_list = []
         sxnet.eval()
         with torch.no_grad():
-            for x in testloader:
+            for x, y in tqdm(testloader, desc='validation'):
                 x = x.to(device)
                 y_test_pred = sxnet(x)
                 y_test_pred = torch.sigmoid(y_test_pred)
                 y_pred_tag = torch.round(y_test_pred)
                 y_pred_list.append(y_pred_tag.cpu().numpy())
+                y_list.append(y.cpu().numpy())
         y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
+        y_list = [a.squeeze().tolist() for a in y_list]
 
         print(classification_report(
             self.y_test, y_pred_list,
@@ -203,37 +201,7 @@ class NaiveFNN(object):
             digits=6
         ))
 
-    def prepare_organisation(self, organisation_id):
-        data = load_organisation(self.store, organisation_id)
-
-        animal_ids = data.index.unique(level='animal_id')
-
-        self.x_list = []
-        self.y_list = []
-
-        for animal_id in tqdm(animal_ids):
-            self.animal = data.loc[(
-                slice(None),
-                slice(None),
-                animal_id,
-                slice(None)
-            ), slice(None)]
-
-            self.prepare_animal()
-
-        self.x = np.concatenate(self.x_list)
-        self.y = np.concatenate(self.y_list)
-
-    def split_data(self):
-        self.x, self.x_test, self.y, self.y_test = train_test_split(
-            self.x, self.y, test_size=0.33, random_state=42)
-
-    def loop_organisations(self):
-        pass
-
     def run(self):
-        self.prepare_organisation('59e7515edb84e482acce8339')
-        self.split_data()
         self.train()
 
 
