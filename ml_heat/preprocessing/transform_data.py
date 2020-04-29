@@ -488,6 +488,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
             (group, slice(None), slice(None)), slice(None)]
         reslist.append(add_group_feature(subframe))
 
+    del frame
     frame = pd.concat(reslist, sort=False)
     frame = frame.dropna(subset=['DIM', 'act', 'act_group_mean'])
     frame['organisation_id'] = organisation_id
@@ -504,6 +505,9 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
         animal = frame.loc[
             (slice(None), slice(None), animal_id, slice(None)), slice(None)]
+
+        if animal.shape[0] < 144:
+            return
 
         write_path = os.path.join(temp_path, animal_id)
         animal = animal.reset_index()
@@ -577,7 +581,7 @@ class DataTransformer(object):
                 'leave': True,
                 'desc': 'Total progress',
                 'position': 1,
-                'smoothing': 0
+                'smoothing': 0.01
             }
 
             for f in tqdm(as_completed(results), **kwargs):

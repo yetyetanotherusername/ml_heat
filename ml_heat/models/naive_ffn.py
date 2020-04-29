@@ -4,7 +4,7 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 
 import torch
 import torch.nn as nn
@@ -100,16 +100,11 @@ class NaiveFNN(object):
         self.animal_ids = animal_ids
         self.store = dt.feather_store
         if self.animal_ids is None:
-            self.animal_ids = os.listdir(self.store)[:200]
-        self.animal = None
-        self.x = None
-        self.y = None
-        self.x_test = None
-        self.y_test = None
+            self.animal_ids = os.listdir(self.store)[:5000]
 
         self.learning_rate = 0.01
         self.momentum = 0.9
-        self.epochs = 2
+        self.epochs = 1
 
         train_animals, test_animals = train_test_split(
             self.animal_ids, test_size=0.33, random_state=42)
@@ -128,7 +123,7 @@ class NaiveFNN(object):
     def train(self):
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda:0" if use_cuda else "cpu")
-        torch.backends.cudnn.benchmark = True
+        # torch.backends.cudnn.benchmark = True
 
         sxnet = SXNet()
         sxnet.to(device)
@@ -159,6 +154,7 @@ class NaiveFNN(object):
         for e in range(self.epochs):  # loop over the dataset multiple times
             epoch_loss = 0
             epoch_acc = 0
+            epoch_len = 0
             for x, y in tqdm(trainloader, desc='epoch progress'):
                 x = x.to(device)
                 y = y.T.unsqueeze(0).to(device)
@@ -174,12 +170,15 @@ class NaiveFNN(object):
 
                 epoch_loss += loss.item()
                 epoch_acc += acc.item()
+                epoch_len += y.shape[1]
 
             print(f'Epoch {e+0:03}: | '
-                  f'Loss: {epoch_loss/len(trainloader):.5f} | '
-                  f'Acc: {epoch_acc/len(trainloader):.3f}')
+                  f'Loss: {epoch_loss/epoch_len:.5f} | '
+                  f'Acc: {epoch_acc/epoch_len:.3f}')
 
         print('Finished Training')
+
+        torch.multiprocessing.set_sharing_strategy('file_system')
 
         y_pred_list = []
         y_list = []
@@ -191,15 +190,24 @@ class NaiveFNN(object):
                 y_test_pred = torch.sigmoid(y_test_pred)
                 y_pred_tag = torch.round(y_test_pred)
                 y_pred_list.append(y_pred_tag.cpu().numpy())
-                y_list.append(y.cpu().numpy())
-        y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
-        y_list = [a.squeeze().tolist() for a in y_list]
+                y_list.append(y.numpy())
+        y_pred_list = np.concatenate([a.squeeze() for a in y_pred_list])
+        y_list = np.concatenate([a.squeeze() for a in y_list])
+
+        print(confusion_matrix(y_list, y_pred_list))
 
         print(classification_report(
-            self.y_test, y_pred_list,
+            y_list, y_pred_list,
             target_names=['no heat', 'heat'],
             digits=6
         ))
+
+    def crawler(self):
+        for animal_id in tqdm(self.animal_ids):
+            frame = load_animal(self.store, animal_id)
+
+            if frame.shape[0] < 144:
+                os.remove(os.path.join(self.store, animal_id))
 
     def run(self):
         self.train()
