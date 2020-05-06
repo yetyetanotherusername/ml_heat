@@ -17,5 +17,5 @@ statsmodels
 xgboost
 cattledb
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
--e git+ssh://git@bitbucket.org/smaxtec/anthilldb.git#egg=anthilldb
--e git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
+anthilldb
+sxutils

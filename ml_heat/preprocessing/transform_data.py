@@ -4,6 +4,7 @@
 import os
 import json
 import h5py as h5
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import multiprocessing
@@ -506,8 +507,17 @@ def transform_organisation(organisation_id, readpath, temp_path):
         animal = frame.loc[
             (slice(None), slice(None), animal_id, slice(None)), slice(None)]
 
-        if animal.shape[0] < 144:
-            return
+        if animal.shape[0] < 30 * 144:
+            continue
+
+        has_heat = np.any(
+            np.logical_or(
+                np.logical_or(animal.pregnant, animal.cyclic),
+                animal.inseminated)
+        )
+
+        if has_heat is False:
+            continue
 
         write_path = os.path.join(temp_path, animal_id)
         animal = animal.reset_index()

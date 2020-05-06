@@ -1,11 +1,6 @@
 from setuptools.command.test import test as TestCommand
 import sys
 
-try:  # for pip >= 10
-    from pip._internal.req import parse_requirements
-except ImportError:  # for pip <= 9.0.3
-    from pip.req import parse_requirements
-
 try:
     from setuptools import setup
 except ImportError:
@@ -14,14 +9,28 @@ except ImportError:
 with open('README.md') as readme_file:
     readme = readme_file.read()
 
-install_reqs = parse_requirements('requirements.txt', session=False)
-
-# parse_requirements is not really intended to be used like this. we should probably
-# find a better way to start our apps correctly and do not demand on installing
-# ourselves...
-
-reqs = [str(ir.req) for ir in install_reqs]
-# reqs.remove("None")
+requirements = [
+    'pyarrow',
+    'h5py',
+    'pycodestyle',
+    'tqdm',
+    'pandas',
+    'numpy',
+    'scipy',
+    'sklearn',
+    'torch',
+    'matplotlib',
+    'tables',
+    'marshmallow<3.0',
+    'jupyterlab',
+    'ipympl',
+    'statsmodels',
+    'xgboost',
+    'cattledb',
+    'anthilldb',
+    'sxutils',
+    'sxapi'
+]
 
 test_requirements = [
     "pytest",
@@ -54,7 +63,7 @@ setup(
     ],
     package_dir={'ml_heat': 'ml_heat'},
     include_package_data=True,
-    install_requires=reqs,
+    install_requires=requirements,
     zip_safe=False,
     keywords='ml_heat',
     test_suite='tests',
