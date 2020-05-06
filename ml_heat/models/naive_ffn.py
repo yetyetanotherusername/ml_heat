@@ -25,7 +25,7 @@ dt = DataTransformer()
 class SXNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.layer1 = nn.Linear(2 * 144 + 1, 1000)
+        self.layer1 = nn.Linear(2 * 288 + 1, 1000)
         self.layer2 = nn.Linear(1000, 1000)
         self.layer3 = nn.Linear(1000, 1000)
         self.layer4 = nn.Linear(1000, 1)
@@ -40,10 +40,11 @@ class SXNet(nn.Module):
 
 
 class Data(Dataset):
-    def __init__(self, animal_ids, path):
+    def __init__(self, animal_ids, path, win_len):
         self.animal_ids = animal_ids
         self.store = path
         self.scaler = StandardScaler()
+        self.time_window_len = win_len
 
     def __len__(self):
         return len(self.animal_ids)
@@ -75,7 +76,10 @@ class Data(Dataset):
         data.act_group_mean = pd.to_numeric(
             data.act_group_mean.round(decimals=2), downcast='float')
 
-        shifts = range(144)
+        data[['act', 'act_group_mean']] = self.scaler.fit_transform(
+            data[['act', 'act_group_mean']])
+
+        shifts = range(self.time_window_len)
 
         act_shift = duplicate_shift(data.act, shifts, 'act')
         group_shift = duplicate_shift(
@@ -90,8 +94,6 @@ class Data(Dataset):
         y = data.annotation.values
         x = data.drop('annotation', axis=1).values
 
-        x = self.scaler.fit_transform(x)
-
         return x, y
 
 
@@ -99,12 +101,15 @@ class NaiveFNN(object):
     def __init__(self, animal_ids=None):
         self.animal_ids = animal_ids
         self.store = dt.feather_store
+        self.model_store = os.path.join(
+            os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn')
         if self.animal_ids is None:
-            self.animal_ids = os.listdir(self.store)[:5000]
+            self.animal_ids = os.listdir(self.store)[:10000]
 
+        self.epochs = 2
         self.learning_rate = 0.01
         self.momentum = 0.9
-        self.epochs = 1
+        self.time_window_len = 288
 
         train_animals, test_animals = train_test_split(
             self.animal_ids, test_size=0.33, random_state=42)
@@ -132,10 +137,14 @@ class NaiveFNN(object):
             lr=self.learning_rate
         )
 
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = nn.BCEWithLogitsLoss(
+            pos_weight=torch.FloatTensor([250.]).to(device))
 
-        traindata = Data(self.partition['train'], self.store)
-        testdata = Data(self.partition['validation'], self.store)
+        traindata = Data(
+            self.partition['train'],
+            self.store,
+            self.time_window_len
+        )
 
         trainloader = DataLoader(
             dataset=traindata,
@@ -144,18 +153,16 @@ class NaiveFNN(object):
             num_workers=4
         )
 
-        testloader = DataLoader(
-            testdata,
-            batch_size=1,
-            shuffle=False,
-            num_workers=4
-        )
+        params = {
+            'desc': 'epoch progress',
+            'smoothing': 0.01
+        }
 
         for e in range(self.epochs):  # loop over the dataset multiple times
             epoch_loss = 0
             epoch_acc = 0
             epoch_len = 0
-            for x, y in tqdm(trainloader, desc='epoch progress'):
+            for x, y in tqdm(trainloader, **params):
                 x = x.to(device)
                 y = y.T.unsqueeze(0).to(device)
                 optimizer.zero_grad()
@@ -176,9 +183,32 @@ class NaiveFNN(object):
                   f'Loss: {epoch_loss/epoch_len:.5f} | '
                   f'Acc: {epoch_acc/epoch_len:.3f}')
 
+            torch.save(sxnet.state_dict(), self.model_store)
+
         print('Finished Training')
 
+    def validate(self):
+        print('Starting Validation')
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda:0" if use_cuda else "cpu")
+
+        sxnet = SXNet()
+        sxnet.to(device)
+        sxnet.load_state_dict(torch.load(self.model_store))
         torch.multiprocessing.set_sharing_strategy('file_system')
+
+        testdata = Data(
+            self.partition['validation'],
+            self.store,
+            self.time_window_len
+        )
+
+        testloader = DataLoader(
+            testdata,
+            batch_size=1,
+            shuffle=False,
+            num_workers=4
+        )
 
         y_pred_list = []
         y_list = []
@@ -194,23 +224,32 @@ class NaiveFNN(object):
         y_pred_list = np.concatenate([a.squeeze() for a in y_pred_list])
         y_list = np.concatenate([a.squeeze() for a in y_list])
 
+        print('\n#####################################')
+        print('Confusion Matrix')
+        print('#####################################\n')
         print(confusion_matrix(y_list, y_pred_list))
+        print('\n')
 
+        print('#####################################')
+        print('Classification Report')
+        print('#####################################\n')
         print(classification_report(
             y_list, y_pred_list,
             target_names=['no heat', 'heat'],
-            digits=6
+            digits=6,
+            zero_division=0
         ))
 
     def crawler(self):
         for animal_id in tqdm(self.animal_ids):
             frame = load_animal(self.store, animal_id)
 
-            if frame.shape[0] < 144:
+            if frame.shape[0] < self.time_window_len:
                 os.remove(os.path.join(self.store, animal_id))
 
     def run(self):
         self.train()
+        self.validate()
 
 
 def main():
