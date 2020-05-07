@@ -42,16 +42,32 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
 
 
 def download_key(db_client, key, metrics, from_dt, to_dt, output_file_path):
-    timeseries = db_client.get_metrics(key, metrics, from_dt, to_dt)
+    # can only load 400 days at once
+    chunks = []
+    while (to_dt - from_dt).total_seconds() >= 399 * 24 * 60 * 60:
+        chunk = (from_dt, from_dt + datetime.timedelta(days=399))
+        chunks.append(chunk)
+        from_dt += datetime.timedelta(days=399)
 
-    animal_data = defaultdict(lambda: [None] * len(metrics))
-    for i, metric_data in enumerate(timeseries):
-        for p in metric_data.all(raw=True):
-            tzinfo = datetime.timezone(datetime.timedelta(seconds=p.ts_offset))
-            dt_str = datetime.datetime.fromtimestamp(p.ts).astimezone(tzinfo)
-            animal_data[dt_str][i] = p.value
+    chunks.append((from_dt, to_dt))
 
-    frame = pd.DataFrame(animal_data).T.sort_index()
+    frames = []
+    for chunk in chunks:
+        timeseries = db_client.get_metrics(key, metrics, chunk[0], chunk[1])
+
+        animal_data = defaultdict(lambda: [None] * len(metrics))
+        for i, metric_data in enumerate(timeseries):
+            for p in metric_data.all(raw=True):
+                tzinfo = datetime.timezone(
+                    datetime.timedelta(seconds=p.ts_offset))
+                dt_str = datetime.datetime.fromtimestamp(p.ts).astimezone(
+                    tzinfo)
+                animal_data[dt_str][i] = p.value
+
+        frames.append(pd.DataFrame(animal_data).T.sort_index())
+
+    frame = pd.concat(frames, sort=True)
+    frame = frame.loc[~frame.index.duplicated(keep='first')]
 
     if not frame.empty:
         frame.columns = metrics
@@ -76,15 +92,13 @@ class DataLoader(object):
             private_endpoint=PRIVATE_ENDPOINT).privatelow
 
         self.dbclient = DirectDBClient(
-            project_id=LIVECONFIG.GCP_PROJECT_ID,
-            instance_id=LIVECONFIG.GCP_INSTANCE_ID,
-            credentials=None,
-            table_prefix=LIVECONFIG.TABLE_PREFIX,
-            metric_definition=LIVECONFIG.METRICS,
-            pool_size=30)
+            engine='bigtable',
+            engine_options=LIVECONFIG.ENGINE_OPTIONS,
+            table_prefix=LIVECONFIG.TABLE_PREFIX)
 
         self.thread_pool = ThreadPoolExecutor(30)
         self.process_pool = ProcessPoolExecutor(os.cpu_count())
+        self.small_pool = ThreadPoolExecutor(5)
 
         self.store_path = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__')
@@ -197,7 +211,6 @@ class DataLoader(object):
             else:
                 filtered_orga_ids = organisation_ids
 
-        print('Loading animals...')
         futures = [self.thread_pool.submit(
                    self.api.get_animals_by_organisation_id,
                    organisation_id)
@@ -207,7 +220,9 @@ class DataLoader(object):
             'total': len(futures),
             'unit': 'organisations',
             'unit_scale': True,
-            'leave': True
+            'leave': True,
+            'smoothing': 0.001,
+            'desc': 'Loading animals'
         }
 
         for f in tqdm(as_completed(futures), **kwargs):
@@ -215,15 +230,24 @@ class DataLoader(object):
 
         animals = [x for future in futures for x in future.result()]
 
-        print('Loading additional events for animals...')
+        # kwargs = {
+        #     'desc': 'Loading additional events for animals',
+        #     'unit': 'animals',
+        #     'smoothing': 0.001
+        # }
+
         # tuple_list = []
-        # for animal in tqdm(animals):
+        # for animal in tqdm(animals, **kwargs):
         #     tuple_list.append(
         #         (animal['_id'],
-        #          self.privateapi.get_events_by_animal_id(animal['_id'],
-        #          True)))
+        #          self.privateapi.get_events_by_animal_id(
+        #             animal['_id'], True)))
 
-        tuple_list = [(animal['_id'], self.thread_pool.submit(
+        # event_dict = {
+        #     tupl[0]: tupl[1] for tupl in tuple_list
+        # }
+
+        tuple_list = [(animal['_id'], self.small_pool.submit(
                        self.privateapi.get_events_by_animal_id,
                        animal['_id'], True))
                       for animal in animals]
@@ -237,7 +261,8 @@ class DataLoader(object):
             'total': len(events),
             'unit': 'files',
             'unit_scale': True,
-            'leave': True
+            'leave': True,
+            'smoothing': 0.001
         }
 
         for f in tqdm(as_completed(events), **kwargs):
@@ -301,7 +326,9 @@ class DataLoader(object):
 
         print('Preparing to load sensor data...')
         from_dt = datetime.datetime(2018, 4, 1)
-        to_dt = datetime.datetime(2019, 4, 1)
+        to_dt = datetime.datetime(2020, 4, 1)
+
+        self.dbclient.service_init()
 
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
@@ -336,11 +363,11 @@ class DataLoader(object):
         if not os.path.exists(temp_path):
             os.mkdir(temp_path)
 
-        print('Loading sensordata...')
+        # print('Loading sensordata...')
 
-        # for _id in animal_ids:
-        #     download_key(
-        #         self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
+        for _id in tqdm(animal_ids):
+            download_key(
+                self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
 
         results = [self.process_pool.submit(
             download_key, self.dbclient, _id, metrics, from_dt, to_dt,
@@ -350,7 +377,9 @@ class DataLoader(object):
             'total': len(results),
             'unit': 'files',
             'unit_scale': True,
-            'leave': True
+            'leave': True,
+            'desc': 'Sensordata progress',
+            'smoothing': 0.01
         }
         for f in tqdm(as_completed(results), **kwargs):
             pass
