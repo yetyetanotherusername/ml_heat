@@ -42,6 +42,7 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
 
 
 def download_key(db_client, key, metrics, from_dt, to_dt, output_file_path):
+    db_client.service_init()
     # can only load 400 days at once
     chunks = []
     while (to_dt - from_dt).total_seconds() >= 399 * 24 * 60 * 60:
@@ -262,7 +263,8 @@ class DataLoader(object):
             'unit': 'files',
             'unit_scale': True,
             'leave': True,
-            'smoothing': 0.001
+            'smoothing': 0.001,
+            'desc': 'Loading events'
         }
 
         for f in tqdm(as_completed(events), **kwargs):
@@ -328,8 +330,6 @@ class DataLoader(object):
         from_dt = datetime.datetime(2018, 4, 1)
         to_dt = datetime.datetime(2020, 4, 1)
 
-        self.dbclient.service_init()
-
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
 
@@ -365,9 +365,9 @@ class DataLoader(object):
 
         # print('Loading sensordata...')
 
-        for _id in tqdm(animal_ids):
-            download_key(
-                self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
+        # for _id in tqdm(animal_ids):
+        #     download_key(
+        #         self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
 
         results = [self.process_pool.submit(
             download_key, self.dbclient, _id, metrics, from_dt, to_dt,
