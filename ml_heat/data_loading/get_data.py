@@ -339,24 +339,24 @@ class DataLoader(object):
 
         # print('Loading sensordata...')
 
-        # for _id in tqdm(animal_ids):
-        #     download_key(
-        #         self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
+        for _id in tqdm(animal_ids):
+            download_key(
+                self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
 
-        results = [self.process_pool.submit(
-            download_key, self.dbclient, _id, metrics, from_dt, to_dt,
-            temp_path) for _id in animal_ids]
+        # results = [self.process_pool.submit(
+        #     download_key, self.dbclient, _id, metrics, from_dt, to_dt,
+        #     temp_path) for _id in animal_ids]
 
-        kwargs = {
-            'total': len(results),
-            'unit': 'files',
-            'unit_scale': True,
-            'leave': True,
-            'desc': 'Sensordata progress',
-            'smoothing': 0.01
-        }
-        for f in tqdm(as_completed(results), **kwargs):
-            pass
+        # kwargs = {
+        #     'total': len(results),
+        #     'unit': 'files',
+        #     'unit_scale': True,
+        #     'leave': True,
+        #     'desc': 'Sensordata progress',
+        #     'smoothing': 0.01
+        # }
+        # for f in tqdm(as_completed(results), **kwargs):
+        #     pass
 
         print('Download finished...')
 
