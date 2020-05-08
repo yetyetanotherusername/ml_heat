@@ -42,7 +42,6 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
 
 
 def download_key(db_client, key, metrics, from_dt, to_dt, output_file_path):
-    db_client.service_init()
     # can only load 400 days at once
     chunks = []
     while (to_dt - from_dt).total_seconds() >= 399 * 24 * 60 * 60:
@@ -67,7 +66,7 @@ def download_key(db_client, key, metrics, from_dt, to_dt, output_file_path):
 
         frames.append(pd.DataFrame(animal_data).T.sort_index())
 
-    frame = pd.concat(frames, sort=True)
+    frame = pd.concat(frames).sort_index()
     frame = frame.loc[~frame.index.duplicated(keep='first')]
 
     if not frame.empty:
@@ -304,6 +303,8 @@ class DataLoader(object):
         from_dt = datetime.datetime(2018, 4, 1)
         to_dt = datetime.datetime(2020, 4, 1)
 
+        self.dbclient.service_init()
+
         if organisation_ids is None:
             organisation_ids = self.organisation_ids
 
@@ -339,7 +340,13 @@ class DataLoader(object):
 
         # print('Loading sensordata...')
 
-        for _id in tqdm(animal_ids):
+        kwargs = {
+            'desc': 'Loading sensordata',
+            'unit': 'animals',
+            'smoothing': 0.001
+        }
+
+        for _id in tqdm(animal_ids, **kwargs):
             download_key(
                 self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
 
