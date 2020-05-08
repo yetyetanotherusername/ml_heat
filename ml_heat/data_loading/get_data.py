@@ -99,7 +99,6 @@ class DataLoader(object):
 
         self.thread_pool = ThreadPoolExecutor(30)
         self.process_pool = ProcessPoolExecutor(os.cpu_count())
-        self.small_pool = ThreadPoolExecutor(5)
 
         self.store_path = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__')
@@ -231,50 +230,23 @@ class DataLoader(object):
 
         animals = [x for future in futures for x in future.result()]
 
-        # kwargs = {
-        #     'desc': 'Loading additional events for animals',
-        #     'unit': 'animals',
-        #     'smoothing': 0.001
-        # }
-
-        # tuple_list = []
-        # for animal in tqdm(animals, **kwargs):
-        #     tuple_list.append(
-        #         (animal['_id'],
-        #          self.privateapi.get_events_by_animal_id(
-        #             animal['_id'], True)))
-
-        # event_dict = {
-        #     tupl[0]: tupl[1] for tupl in tuple_list
-        # }
-
-        tuple_list = [(animal['_id'], self.small_pool.submit(
-                       self.privateapi.get_events_by_animal_id,
-                       animal['_id'], True))
-                      for animal in animals]
-
-        if not tuple_list:
-            return
-
-        events = list(zip(*tuple_list))[1]
-
         kwargs = {
-            'total': len(events),
-            'unit': 'files',
-            'unit_scale': True,
-            'leave': True,
-            'smoothing': 0.001,
-            'desc': 'Loading events'
+            'desc': 'Loading additional events for animals',
+            'unit': 'animals',
+            'smoothing': 0.001
         }
 
-        for f in tqdm(as_completed(events), **kwargs):
-            pass
+        tuple_list = []
+        for animal in tqdm(animals, **kwargs):
+            tuple_list.append(
+                (animal['_id'],
+                 self.privateapi.get_events_by_animal_id(
+                    animal['_id'], True)))
 
         event_dict = {
-            tupl[0]: tupl[1].result() for tupl in tuple_list
+            tupl[0]: tupl[1] for tupl in tuple_list
         }
 
-        print('Storing animals...')
         with self.writefile() as file:
             if self._animal_orga_map is None:
                 try:
@@ -283,7 +255,9 @@ class DataLoader(object):
                 except Exception:
                     self._animal_orga_map = {}
 
-            for animal in tqdm(animals):
+            kwargs['desc'] = 'Storing animals'
+
+            for animal in tqdm(animals, **kwargs):
                 organisation_id = animal['organisation_id']
                 orga_group = file[f'data/{organisation_id}']
 
