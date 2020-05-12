@@ -3,12 +3,18 @@
 
 import os
 import json
+import joblib
 import h5py as h5
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    as_completed
+)
+
+from sklearn.preprocessing import StandardScaler
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
@@ -16,8 +22,16 @@ from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 
 from ml_heat.helper import (
     plot_setup,
-    load_animal
+    load_animal,
+    store_animal
 )
+
+
+def scale_worker(animal_id, columns, scaler, store):
+    frame = load_animal(store, animal_id)
+    frame[columns] = scaler.transform(frame[columns])
+    store_animal(frame, store, animal_id)
+    return animal_id
 
 
 def calculate_dims(index, animal):
@@ -507,6 +521,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
         animal = frame.loc[
             (slice(None), slice(None), animal_id, slice(None)), slice(None)]
 
+        animal = animal[animal.temp > 30]
+
         if animal.shape[0] < 30 * 144:
             continue
 
@@ -519,9 +535,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
         if has_heat is False:
             continue
 
-        write_path = os.path.join(temp_path, animal_id)
-        animal = animal.reset_index()
-        animal.to_feather(write_path)
+        store_animal(animal, temp_path, animal_id)
 
     return organisation_id
 
@@ -529,14 +543,17 @@ def transform_organisation(organisation_id, readpath, temp_path):
 class DataTransformer(object):
     def __init__(self, organisation_ids=None, update=False):
         self._organisation_ids = organisation_ids
+
         self.store_path = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__')
+        if not os.path.exists(self.store_path):
+            os.mkdir(self.store_path)
+
+        self.update = update
         self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
         self.feather_store = os.path.join(self.store_path, 'feather_store')
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
-        self.update = update
-        if not os.path.exists(self.store_path):
-            os.mkdir(self.store_path)
+        self.model_store = os.path.join(self.store_path, 'models')
 
         self._animal_orga_map = None
 
@@ -638,6 +655,59 @@ class DataTransformer(object):
                     name='organisation',
                     data=json.dumps(organisation))
 
+    def normalize_numeric_cols(self):
+        animal_ids = os.listdir(self.feather_store)
+
+        scaler = StandardScaler()
+
+        numeric_cols = [
+            'act',
+            'temp',
+            'DIM',
+            'temp_filtered',
+            'act_group_mean'
+        ]
+
+        # # fit scaler to data
+        kwargs = {
+            'desc': 'Fitting scaler parameters',
+            'smoothing': 0.01
+        }
+
+        for animal_id in tqdm(animal_ids, **kwargs):
+            frame = load_animal(self.feather_store, animal_id)
+
+            scaler.partial_fit(frame[numeric_cols])
+
+        scaler_store_path = os.path.join(self.model_store, 'scaler')
+        joblib.dump(scaler, scaler_store_path)
+
+        scaler = joblib.load(scaler_store_path)
+
+        kwargs = {
+            'total': len(animal_ids),
+            'unit': 'animals',
+            'unit_scale': True,
+            'leave': True,
+            'desc': 'Scaling numeric columns',
+            'smoothing': 0.01
+        }
+
+        with ProcessPoolExecutor(os.cpu_count()) as process_pool:
+            results = [
+                process_pool.submit(
+                    scale_worker,
+                    animal_id,
+                    numeric_cols,
+                    scaler,
+                    self.feather_store
+                ) for animal_id in animal_ids]
+
+            for f in tqdm(as_completed(results), **kwargs):
+                pass
+
+        return None
+
     def test(self):
         plt = plot_setup()
 
@@ -690,6 +760,7 @@ class DataTransformer(object):
     def run(self):
         self.clear_data()
         self.transform_data()
+        self.normalize_numeric_cols()
         self.test()
         # self.test()
 

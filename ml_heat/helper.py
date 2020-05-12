@@ -20,6 +20,15 @@ def load_animal(path, animal_id):
     return frame
 
 
+def store_animal(frame, store_path, animal_id):
+    filepath = os.path.join(store_path, animal_id)
+    frame = frame.reset_index()
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    frame.to_feather(filepath)
+    return animal_id
+
+
 def duplicate_shift(series, shifts, name=None):
     n_cols = len(shifts)
     frame = pd.concat([series] * n_cols, axis=1)
