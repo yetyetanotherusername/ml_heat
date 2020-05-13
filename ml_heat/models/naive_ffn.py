@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix
 
 import torch
@@ -25,15 +24,19 @@ dt = DataTransformer()
 class SXNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.layer1 = nn.Linear(2 * 288 + 1, 1000)
+        self.layer1 = nn.Linear(288 + 1, 1000)
         self.layer2 = nn.Linear(1000, 1000)
         self.layer3 = nn.Linear(1000, 1000)
         self.layer4 = nn.Linear(1000, 1)
 
+        self.bn1 = nn.BatchNorm1d(1000)
+        self.bn2 = nn.BatchNorm1d(1000)
+        self.bn3 = nn.BatchNorm1d(1000)
+
     def forward(self, X):
-        X = F.relu(self.layer1(X))
-        X = F.relu(self.layer2(X))
-        X = F.relu(self.layer3(X))
+        X = F.selu(self.bn1(self.layer1(X)))
+        X = F.selu(self.bn2(self.layer2(X)))
+        X = F.selu(self.bn3(self.layer3(X)))
         y = self.layer4(X)
 
         return y
@@ -43,7 +46,6 @@ class Data(Dataset):
     def __init__(self, animal_ids, path, win_len):
         self.animal_ids = animal_ids
         self.store = path
-        self.scaler = StandardScaler()
         self.time_window_len = win_len
 
     def __len__(self):
@@ -52,7 +54,6 @@ class Data(Dataset):
     def __getitem__(self, index):
         animal_id = self.animal_ids[index]
         x, y = self.prepare_animal(animal_id)
-
         return torch.FloatTensor(x), torch.FloatTensor(y)
 
     def prepare_animal(self, animal_id):
@@ -69,24 +70,17 @@ class Data(Dataset):
             'pregnant',
             'cyclic',
             'inseminated',
-            'deleted'
+            'deleted',
+            'act',
+            'act_group_mean'
         ], axis=1)
-
-        data.act = pd.to_numeric(data.act.round(decimals=2), downcast='float')
-        data.act_group_mean = pd.to_numeric(
-            data.act_group_mean.round(decimals=2), downcast='float')
-
-        data[['act', 'act_group_mean']] = self.scaler.fit_transform(
-            data[['act', 'act_group_mean']])
 
         shifts = range(self.time_window_len)
 
-        act_shift = duplicate_shift(data.act, shifts, 'act')
-        group_shift = duplicate_shift(
-            data.act_group_mean, shifts, 'act_group_mean')
+        heat_shift = duplicate_shift(data.act, shifts, 'heat_feature')
 
-        data = pd.concat([data, act_shift, group_shift], axis=1)
-        data = data.drop(['act', 'act_group_mean'], axis=1)
+        data = pd.concat([data, heat_shift], axis=1)
+        data = data.drop(['heat_feature'], axis=1)
         data = data.dropna()
         data.DIM = pd.to_numeric(data.DIM, downcast='signed')
         data.annotation = data.annotation.astype(int)
@@ -163,8 +157,8 @@ class NaiveFNN(object):
             epoch_acc = 0
             epoch_len = 0
             for x, y in tqdm(trainloader, **params):
-                x = x.to(device)
-                y = y.T.unsqueeze(0).to(device)
+                x = x[-1, :, :].to(device)
+                y = y.T.unsqueeze(0)[-1, :].to(device)
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
@@ -215,7 +209,7 @@ class NaiveFNN(object):
         sxnet.eval()
         with torch.no_grad():
             for x, y in tqdm(testloader, desc='validation'):
-                x = x.to(device)
+                x = x[-1, :, :].to(device)
                 y_test_pred = sxnet(x)
                 y_test_pred = torch.sigmoid(y_test_pred)
                 y_pred_tag = torch.round(y_test_pred)
