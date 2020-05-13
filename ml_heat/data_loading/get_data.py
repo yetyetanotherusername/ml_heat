@@ -85,10 +85,10 @@ class DataLoader(object):
             asynchronous=True).low
 
         self.privateapi = PrivateAPIv2(
-            api_key=PRIVATE_STAGING_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
+            api_key=PRIVATE_LIVE_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
 
         self.oldapi = LowLevelAPI(
-            api_key=PRIVATE_STAGING_TOKEN,
+            api_key=PRIVATE_LIVE_TOKEN,
             private_endpoint=PRIVATE_ENDPOINT).privatelow
 
         self.dbclient = DirectDBClient(
@@ -346,24 +346,24 @@ class DataLoader(object):
             'smoothing': 0.001
         }
 
-        for _id in tqdm(animal_ids, **kwargs):
-            download_key(
-                self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
+        # for _id in tqdm(animal_ids, **kwargs):
+        #     download_key(
+        #         self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
 
-        # results = [self.process_pool.submit(
-        #     download_key, self.dbclient, _id, metrics, from_dt, to_dt,
-        #     temp_path) for _id in animal_ids]
+        results = [self.thread_pool.submit(
+            download_key, self.dbclient, _id, metrics, from_dt, to_dt,
+            temp_path) for _id in animal_ids]
 
-        # kwargs = {
-        #     'total': len(results),
-        #     'unit': 'files',
-        #     'unit_scale': True,
-        #     'leave': True,
-        #     'desc': 'Sensordata progress',
-        #     'smoothing': 0.01
-        # }
-        # for f in tqdm(as_completed(results), **kwargs):
-        #     pass
+        kwargs = {
+            'total': len(results),
+            'unit': 'files',
+            'unit_scale': True,
+            'leave': True,
+            'desc': 'Sensordata progress',
+            'smoothing': 0.01
+        }
+        for f in tqdm(as_completed(results), **kwargs):
+            pass
 
         print('Download finished...')
 
