@@ -30,8 +30,18 @@ from ml_heat.helper import (
 def scale_worker(animal_id, columns, scaler, store):
     frame = load_animal(store, animal_id)
     frame[columns] = scaler.transform(frame[columns])
+
+    for column in columns:
+        frame[column] = pd.to_numeric(frame[column], downcast='float')
+
     store_animal(frame, store, animal_id)
     return animal_id
+
+
+def add_heat_feature(inframe):
+    inframe['heat_feature'] = (
+        inframe.act - inframe.act_group_mean).rolling(12).sum()
+    return inframe
 
 
 def calculate_dims(index, animal):
@@ -101,7 +111,8 @@ def add_cyclic(inframe, animal):
     # find indices closest to cyclic heats and set cyclic column to true
     # if no matching index is found inside tolerance of 24h, disregard
     span = pd.Timedelta(hours=12)
-    on_span = pd.Timedelta(hours=4)
+    start_span = pd.Timedelta(hours=2)
+    end_span = pd.Timedelta(hours=8)
     for dt in cyclic_dts:
         idx = None
         from_dt = dt - span
@@ -112,9 +123,9 @@ def add_cyclic(inframe, animal):
         except ValueError:
             continue
 
-        start = idx - on_span
-        end = idx + on_span
-        inframe.cyclic[start:end] = True
+        start = idx - start_span
+        end = idx + end_span
+        inframe.loc[start:end, 'cyclic'] = True
     return inframe
 
 
@@ -145,10 +156,11 @@ def add_inseminated(inframe, animal):
 
     insemination_dts = insemination_rows.event_ts.to_list()
 
-    # find indices closest to cyclic heats and set cyclic column to true
-    # if no matching index is found inside tolerance of 24h, disregard
+    # find indices closest to inseminated heats and set inseminated column to
+    # true if no matching index is found inside tolerance of 24h, disregard
     span = pd.Timedelta(hours=12)
-    on_span = pd.Timedelta(hours=4)
+    start_span = pd.Timedelta(hours=2)
+    end_span = pd.Timedelta(hours=8)
     for dt in insemination_dts:
         idx = None
         from_dt = dt - span
@@ -159,9 +171,9 @@ def add_inseminated(inframe, animal):
         except ValueError:
             continue
 
-        start = idx - on_span
-        end = idx + on_span
-        inframe.cyclic[start:end] = True
+        start = idx - start_span
+        end = idx + end_span
+        inframe.loc[start:end, 'inseminated'] = True
     return inframe
 
 
@@ -225,7 +237,8 @@ def add_pregnant(inframe, animal):
     # find indices closest to pregnant heats and set pregnant column to true
     # if no matching index is found inside tolerance of 24h, disregard
     span = pd.Timedelta(hours=12)
-    on_span = pd.Timedelta(hours=4)
+    start_span = pd.Timedelta(hours=2)
+    end_span = pd.Timedelta(hours=8)
     for dt in pregnant_ts:
         idx = None
         from_dt = dt - span
@@ -236,9 +249,9 @@ def add_pregnant(inframe, animal):
         except ValueError:
             continue
 
-        start = idx - on_span
-        end = idx + on_span
-        inframe.pregnant[start:end] = True
+        start = idx - start_span
+        end = idx + end_span
+        inframe.loc[start:end, 'pregnant'] = True
     return inframe
 
 
@@ -268,7 +281,8 @@ def add_deleted(inframe, animal, events):
                 detected_heats.remove(undeleted)
 
     span = pd.Timedelta(hours=12)
-    on_span = pd.Timedelta(hours=4)
+    start_span = pd.Timedelta(hours=2)
+    end_span = pd.Timedelta(hours=8)
     for dt in detected_heats:
         idx = None
         from_dt = dt - span
@@ -279,9 +293,9 @@ def add_deleted(inframe, animal, events):
         except ValueError:
             continue
 
-        start = idx - on_span
-        end = idx + on_span
-        inframe.deleted[start:end] = True
+        start = idx - start_span
+        end = idx + end_span
+        inframe.loc[start:end, 'deleted'] = True
     return inframe
 
 
@@ -374,7 +388,7 @@ def add_group_feature(inframe):
     # recreate original dataframe with all animals in one column
     frame = frame.stack('animal_id', dropna=False)
     frame = frame.swaplevel().dropna(subset=['act']).sort_index()
-    inframe['act_group_mean'] = frame.act_group_mean
+    inframe.loc[:, 'act_group_mean'] = frame.act_group_mean
 
     return inframe
 
@@ -535,6 +549,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
         if has_heat is False:
             continue
 
+        animal = add_heat_feature(animal)
+
         store_animal(animal, temp_path, animal_id)
 
     return organisation_id
@@ -665,7 +681,8 @@ class DataTransformer(object):
             'temp',
             'DIM',
             'temp_filtered',
-            'act_group_mean'
+            'act_group_mean',
+            'heat_feature'
         ]
 
         # # fit scaler to data
@@ -757,12 +774,60 @@ class DataTransformer(object):
         plt.grid()
         plt.show()
 
+    def test_feature(self):
+        plt = plot_setup()
+
+        frame = load_animal(self.feather_store, '59e75f2b9e182f68cf25721d')
+        frame = frame.reset_index().set_index('datetime')
+
+        ax = frame[['act', 'act_group_mean', 'heat_feature']].plot()
+
+        ymin, ymax = ax.get_ylim()
+
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.cyclic.to_numpy(),
+            facecolor='g',
+            alpha=0.5,
+            label='cyclic heats'
+        )
+
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.inseminated.to_numpy(),
+            facecolor='y',
+            alpha=0.5,
+            label='inseminated heats'
+        )
+
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.pregnant.to_numpy(),
+            facecolor='b',
+            alpha=0.5,
+            label='pregnant heats'
+        )
+
+        ax.fill_between(
+            frame.index.to_numpy(), ymin, ymax,
+            where=frame.deleted.to_numpy(),
+            facecolor='r',
+            alpha=0.5,
+            label='deleted heats'
+        )
+
+        plt.legend()
+
+        plt.grid()
+        plt.show()
+
     def run(self):
         self.clear_data()
         self.transform_data()
         self.normalize_numeric_cols()
         self.test()
         # self.test()
+        # self.test_feature()
 
 
 def main():
