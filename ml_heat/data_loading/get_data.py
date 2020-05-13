@@ -13,6 +13,7 @@ from sxapi import LowLevelAPI, APIv2
 from sxapi.low import PrivateAPIv2
 from anthilldb.client import DirectDBClient
 from anthilldb.settings import get_config_by_name
+from requests.exceptions import ConnectionError
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -237,10 +238,20 @@ class DataLoader(object):
 
         tuple_list = []
         for animal in tqdm(animals, **kwargs):
-            tuple_list.append(
-                (animal['_id'],
-                 self.privateapi.get_events_by_animal_id(
-                    animal['_id'], True)))
+            try:
+                tuple_list.append(
+                    (animal['_id'],
+                     self.privateapi.get_events_by_animal_id(
+                        animal['_id'], True)))
+
+            except ConnectionError:
+                self.privateapi = PrivateAPIv2(
+                    api_key=PRIVATE_LIVE_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
+
+                tuple_list.append(
+                    (animal['_id'],
+                     self.privateapi.get_events_by_animal_id(
+                        animal['_id'], True)))
 
         event_dict = {
             tupl[0]: tupl[1] for tupl in tuple_list
