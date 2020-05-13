@@ -366,7 +366,7 @@ def add_group_feature(inframe):
         index='N/A', level=0, errors='ignore').copy(deep=True)
 
     if frame.empty:
-        inframe['act_group_mean'] = float('nan')
+        inframe.loc[:, 'act_group_mean'] = float('nan')
         return inframe
 
     # make animal id a column index
@@ -378,7 +378,7 @@ def add_group_feature(inframe):
     # create multilevel column index and add group mean to each animal
     frame.columns = [frame.columns, ['act'] * len(frame.columns)]
     frame = frame.stack(level=0, dropna=False)
-    frame['act_group_mean'] = float('nan')
+    frame.loc[:, 'act_group_mean'] = float('nan')
     frame = frame.unstack('animal_id')
     frame = frame.swaplevel(axis=1).sort_index().sort_index(axis=1)
     frame.loc[(slice(None), slice(None)),
@@ -629,6 +629,8 @@ class DataTransformer(object):
 
             for f in tqdm(as_completed(results), **kwargs):
                 pass
+
+        os.system('tput ed')
 
     def clear_data(self):
         if self.update is True:
