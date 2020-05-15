@@ -1,4 +1,6 @@
 pyarrow
+zarr
+numcodecs
 h5py
 pycodestyle
 tqdm

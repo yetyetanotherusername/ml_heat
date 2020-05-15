@@ -13,10 +13,12 @@ def plot_setup():
     return plt
 
 
-def load_animal(path, animal_id):
+def load_animal(path, animal_id, set_index=True):
     frame = pd.read_feather(os.path.join(path, animal_id))
-    frame = frame.set_index(
-        ['organisation_id', 'group_id', 'animal_id', 'datetime'])
+
+    if set_index is True:
+        frame = frame.set_index(
+            ['organisation_id', 'group_id', 'animal_id', 'datetime'])
     return frame
 
 

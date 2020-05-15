@@ -4,6 +4,7 @@
 import os
 import json
 import joblib
+import zarr
 import h5py as h5
 import numpy as np
 import pandas as pd
@@ -23,8 +24,34 @@ from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 from ml_heat.helper import (
     plot_setup,
     load_animal,
-    store_animal
+    store_animal,
+    duplicate_shift
 )
+
+
+def fnn_worker(feather_store,
+               z_arr,
+               animal_id,
+               shifts=range(288)):
+
+    data = load_animal(feather_store, animal_id)
+
+    data['annotation'] = np.logical_or(
+        np.logical_or(data.pregnant, data.cyclic), data.inseminated)
+
+    data = data[['annotation', 'DIM', 'heat_feature']].dropna()
+
+    data.DIM = pd.to_numeric(data.DIM, downcast='float')
+    data.annotation = pd.to_numeric(
+        data.annotation.astype(int), downcast='float')
+    data.heat_feature = pd.to_numeric(data.heat_feature, downcast='float')
+
+    heat_shift = duplicate_shift(data.heat_feature, shifts, 'heat_feature')
+    data = pd.concat([data, heat_shift], axis=1).dropna()
+    data = data.drop(['heat_feature'], axis=1)
+    z_arr.append(data.values)
+    os.remove(os.path.join(feather_store, animal_id))
+    return animal_id
 
 
 def scale_worker(animal_id, columns, scaler, store):
@@ -40,7 +67,7 @@ def scale_worker(animal_id, columns, scaler, store):
 
 def add_heat_feature(inframe):
     inframe['heat_feature'] = (
-        inframe.act - inframe.act_group_mean).rolling(12).sum()
+        inframe.act - inframe.act_group_mean).rolling(12, min_periods=1).sum()
     return inframe
 
 
@@ -343,19 +370,19 @@ def add_features(inframe, organisation, animal):
         group_id = 'N/A'
 
     # country field may be unavailable
-    country = animal.get('metadata', {}).get('country', 'N/A')
+    # country = animal.get('metadata', {}).get('country', 'N/A')
 
     inframe['organisation_id'] = organisation['_id']
     inframe['group_id'] = group_id
     inframe['animal_id'] = animal['_id']
-    inframe['race'] = race
-    inframe['country'] = country
+    # inframe['race'] = race
+    # inframe['country'] = country
     # inframe['partner_id'] = partner_id
     inframe['DIM'] = calculate_dims(inframe.index, animal)
     inframe['temp_filtered'] = calc_temp_without_drink_spikes(inframe)
 
-    inframe.race = inframe.race.astype('category')
-    inframe.country = inframe.country.astype('category')
+    # inframe.race = inframe.race.astype('category')
+    # inframe.country = inframe.country.astype('category')
     # inframe.partner_id = inframe.partner_id.astype('category')
 
     return inframe
@@ -378,7 +405,7 @@ def add_group_feature(inframe):
     # create multilevel column index and add group mean to each animal
     frame.columns = [frame.columns, ['act'] * len(frame.columns)]
     frame = frame.stack(level=0, dropna=False)
-    frame.loc[:, 'act_group_mean'] = float('nan')
+    frame['act_group_mean'] = float('nan')
     frame = frame.unstack('animal_id')
     frame = frame.swaplevel(axis=1).sort_index().sort_index(axis=1)
     frame.loc[(slice(None), slice(None)),
@@ -388,7 +415,7 @@ def add_group_feature(inframe):
     # recreate original dataframe with all animals in one column
     frame = frame.stack('animal_id', dropna=False)
     frame = frame.swaplevel().dropna(subset=['act']).sort_index()
-    inframe.loc[:, 'act_group_mean'] = frame.act_group_mean
+    inframe['act_group_mean'] = frame.act_group_mean
 
     return inframe
 
@@ -566,8 +593,16 @@ class DataTransformer(object):
             os.mkdir(self.store_path)
 
         self.update = update
-        self.train_store_path = os.path.join(self.store_path, 'traindata.hdf5')
+
         self.feather_store = os.path.join(self.store_path, 'feather_store')
+        if not os.path.exists(self.feather_store):
+            os.mkdir(self.feather_store)
+
+        zarr_folder = os.path.join(self.store_path, 'zarr_store')
+        if not os.path.exists(zarr_folder):
+            os.mkdir(zarr_folder)
+        self.zarr_store = os.path.join(zarr_folder, 'store.zarr')
+
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.model_store = os.path.join(self.store_path, 'models')
 
@@ -583,7 +618,7 @@ class DataTransformer(object):
                 self._organisation_ids = list(file['data'].keys())
         return self._organisation_ids
 
-    def transform_data(self):
+    def arrange_data(self):
         print('Transforming data...')
 
         temp_path = self.feather_store
@@ -634,8 +669,10 @@ class DataTransformer(object):
 
     def clear_data(self):
         if self.update is True:
-            if os.path.exists(self.train_store_path):
-                os.remove(self.train_store_path)
+
+            os.system(f'rm -rf {self.zarr_store}')
+            sync_path = os.path.join(self.data_dump, 'process.sync')
+            os.system(f'rm -rf {sync_path}')
 
             for animal_id in tqdm(os.listdir(self.feather_store)):
                 file = os.path.join(self.feather_store, animal_id)
@@ -687,7 +724,7 @@ class DataTransformer(object):
             'heat_feature'
         ]
 
-        # # fit scaler to data
+        # fit scaler to data
         kwargs = {
             'desc': 'Fitting scaler parameters',
             'smoothing': 0.01
@@ -727,6 +764,51 @@ class DataTransformer(object):
 
         return None
 
+    def store_to_zarr(self):
+        if not os.path.exists(self.zarr_store):
+            store = zarr.NestedDirectoryStore(self.zarr_store)
+            z_arr = zarr.creation.create(
+                (0, 290),
+                chunks=(50000, 290),
+                store=store,
+                dtype='f4'
+            )
+        else:
+            store = zarr.NestedDirectoryStore(self.zarr_store)
+            z_arr = zarr.open(store)
+
+        animal_ids = os.listdir(self.feather_store)
+
+        kwargs = {
+            'total': len(animal_ids),
+            'unit': 'animals',
+            'unit_scale': True,
+            'leave': True,
+            'desc': 'Writing to zarr store',
+            'smoothing': 0.01
+        }
+
+        for animal_id in tqdm(animal_ids, **kwargs):
+            fnn_worker(
+                self.feather_store,
+                z_arr,
+                animal_id
+            )
+
+        # with ProcessPoolExecutor(os.cpu_count()) as process_pool:
+        #     results = [
+        #         process_pool.submit(
+        #             fnn_worker,
+        #             self.feather_store,
+        #             z_arr,
+        #             animal_id
+        #         ) for animal_id in animal_ids]
+
+        #     for f in tqdm(as_completed(results), **kwargs):
+        #         pass
+
+        return None
+
     def test(self):
         plt = plot_setup()
 
@@ -734,7 +816,12 @@ class DataTransformer(object):
         frame = frame.reset_index().set_index('datetime')
 
         ax = frame.loc[
-            :, ('act', 'temp', 'temp_filtered', 'act_group_mean', 'DIM')
+            :, ('act',
+                'temp',
+                'temp_filtered',
+                'act_group_mean',
+                'DIM',
+                'heat_feature')
         ].plot()
 
         ymin, ymax = ax.get_ylim()
@@ -823,18 +910,25 @@ class DataTransformer(object):
         plt.grid()
         plt.show()
 
+    def test_zarr(self):
+        store = zarr.NestedDirectoryStore(self.zarr_store)
+        z_arr = zarr.open(store)
+        print(z_arr.info)
+        print(z_arr[0, :])
+
     def run(self):
         self.clear_data()
-        self.transform_data()
+        self.arrange_data()
         self.normalize_numeric_cols()
-        self.test()
+        self.store_to_zarr()
         # self.test()
         # self.test_feature()
+        # self.test_zarr()
 
 
 def main():
-    transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
-    # transformer = DataTransformer()
+    # transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
+    transformer = DataTransformer()
     transformer.run()
 
 
