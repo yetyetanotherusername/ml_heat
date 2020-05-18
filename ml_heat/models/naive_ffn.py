@@ -1,7 +1,7 @@
 import os
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
+import zarr
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 
@@ -12,11 +12,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from ml_heat.preprocessing.transform_data import DataTransformer
-
-from ml_heat.helper import (
-    load_animal,
-    duplicate_shift
-)
 
 dt = DataTransformer()
 
@@ -43,72 +38,55 @@ class SXNet(nn.Module):
 
 
 class Data(Dataset):
-    def __init__(self, animal_ids, path, win_len):
-        self.animal_ids = animal_ids
-        self.store = path
-        self.time_window_len = win_len
+    def __init__(self, mask, path):
+        super(Data, self).__init__()
+
+        store = zarr.LRUStoreCache(
+            zarr.NestedDirectoryStore(path),
+            5 * 10 ** 9
+        )
+
+        self.array = zarr.open(store, mode='r')
+        self.mask = mask
+        self.arrlen = np.sum(self.mask)
 
     def __len__(self):
-        return len(self.animal_ids)
+        return self.arrlen
 
-    def __getitem__(self, index):
-        animal_id = self.animal_ids[index]
-        x, y = self.prepare_animal(animal_id)
+    def __getitem__(self, subindex):
+        index = np.nonzero(self.mask)[0][subindex]
+        row = self.array[index, :]
+        y = [row[0]]
+        x = row[1:]
         return torch.FloatTensor(x), torch.FloatTensor(y)
-
-    def prepare_animal(self, animal_id):
-        data = load_animal(self.store, animal_id)
-
-        data['annotation'] = np.logical_or(
-            np.logical_or(data.pregnant, data.cyclic), data.inseminated)
-
-        data = data.drop([
-            'race',
-            'country',
-            'temp',
-            'temp_filtered',
-            'pregnant',
-            'cyclic',
-            'inseminated',
-            'deleted',
-            'act',
-            'act_group_mean'
-        ], axis=1)
-
-        shifts = range(self.time_window_len)
-
-        heat_shift = duplicate_shift(data.act, shifts, 'heat_feature')
-
-        data = pd.concat([data, heat_shift], axis=1)
-        data = data.drop(['heat_feature'], axis=1)
-        data = data.dropna()
-        data.DIM = pd.to_numeric(data.DIM, downcast='signed')
-        data.annotation = data.annotation.astype(int)
-
-        y = data.annotation.values
-        x = data.drop('annotation', axis=1).values
-
-        return x, y
 
 
 class NaiveFNN(object):
-    def __init__(self, animal_ids=None):
-        self.animal_ids = animal_ids
-        self.store = dt.feather_store
+    def __init__(self):
+        self.store = dt.zarr_store
         self.model_store = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn')
-        if self.animal_ids is None:
-            self.animal_ids = os.listdir(self.store)[:10000]
 
         self.epochs = 2
         self.learning_rate = 0.01
         self.momentum = 0.9
-        self.time_window_len = 288
 
-        train_animals, test_animals = train_test_split(
-            self.animal_ids, test_size=0.33, random_state=42)
+        array = zarr.open(zarr.NestedDirectoryStore(self.store), mode='r')
+        indices = range(array.shape[0])
 
-        self.partition = {'train': train_animals, 'validation': test_animals}
+        train_indices, test_indices = train_test_split(
+            indices, test_size=0.33, random_state=42)
+
+        train_mask = self.check_a_in_b(indices, sorted(train_indices))
+        test_mask = self.check_a_in_b(indices, sorted(test_indices))
+
+        self.partition = {'train': train_mask, 'validation': test_mask}
+
+    def check_a_in_b(self, a, b):
+        assert len(a) >= len(b)
+        out = np.zeros(len(a), dtype=bool)
+        out[np.in1d(a, b)] = True
+        return out
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -136,13 +114,12 @@ class NaiveFNN(object):
 
         traindata = Data(
             self.partition['train'],
-            self.store,
-            self.time_window_len
+            self.store
         )
 
         trainloader = DataLoader(
             dataset=traindata,
-            batch_size=1,
+            batch_size=50000,
             shuffle=True,
             num_workers=4
         )
@@ -157,8 +134,8 @@ class NaiveFNN(object):
             epoch_acc = 0
             epoch_len = 0
             for x, y in tqdm(trainloader, **params):
-                x = x[-1, :, :].to(device)
-                y = y.T.unsqueeze(0)[-1, :].to(device)
+                x = x.to(device)
+                y = y.to(device)
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
@@ -193,8 +170,7 @@ class NaiveFNN(object):
 
         testdata = Data(
             self.partition['validation'],
-            self.store,
-            self.time_window_len
+            self.store
         )
 
         testloader = DataLoader(
@@ -233,13 +209,6 @@ class NaiveFNN(object):
             digits=6,
             zero_division=0
         ))
-
-    def crawler(self):
-        for animal_id in tqdm(self.animal_ids):
-            frame = load_animal(self.store, animal_id)
-
-            if frame.shape[0] < self.time_window_len:
-                os.remove(os.path.join(self.store, animal_id))
 
     def run(self):
         self.train()
