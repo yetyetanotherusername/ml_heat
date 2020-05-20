@@ -2,16 +2,16 @@ import os
 import numpy as np
 from tqdm import tqdm
 import zarr
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, IterableDataset
 
 from ml_heat.preprocessing.transform_data import DataTransformer
+
 
 dt = DataTransformer()
 
@@ -37,28 +37,15 @@ class SXNet(nn.Module):
         return y
 
 
-class Data(Dataset):
-    def __init__(self, mask, path):
+class Data(IterableDataset):
+    def __init__(self, path):
         super(Data, self).__init__()
 
-        store = zarr.LRUStoreCache(
-            zarr.NestedDirectoryStore(path),
-            5 * 10 ** 9
-        )
-
+        store = zarr.NestedDirectoryStore(path)
         self.array = zarr.open(store, mode='r')
-        self.mask = mask
-        self.arrlen = np.sum(self.mask)
 
-    def __len__(self):
-        return self.arrlen
-
-    def __getitem__(self, subindex):
-        index = np.nonzero(self.mask)[0][subindex]
-        row = self.array[index, :]
-        y = [row[0]]
-        x = row[1:]
-        return torch.FloatTensor(x), torch.FloatTensor(y)
+    def __iter__(self):
+        return iter(self.array)
 
 
 class NaiveFNN(object):
@@ -70,23 +57,6 @@ class NaiveFNN(object):
         self.epochs = 2
         self.learning_rate = 0.01
         self.momentum = 0.9
-
-        array = zarr.open(zarr.NestedDirectoryStore(self.store), mode='r')
-        indices = range(array.shape[0])
-
-        train_indices, test_indices = train_test_split(
-            indices, test_size=0.33, random_state=42)
-
-        train_mask = self.check_a_in_b(indices, sorted(train_indices))
-        test_mask = self.check_a_in_b(indices, sorted(test_indices))
-
-        self.partition = {'train': train_mask, 'validation': test_mask}
-
-    def check_a_in_b(self, a, b):
-        assert len(a) >= len(b)
-        out = np.zeros(len(a), dtype=bool)
-        out[np.in1d(a, b)] = True
-        return out
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -112,30 +82,28 @@ class NaiveFNN(object):
         criterion = nn.BCEWithLogitsLoss(
             pos_weight=torch.FloatTensor([250.]).to(device))
 
-        traindata = Data(
-            self.partition['train'],
-            self.store
-        )
-
+        traindata = Data(self.store)
         trainloader = DataLoader(
             dataset=traindata,
             batch_size=50000,
-            shuffle=True,
+            shuffle=False,
             num_workers=4
         )
 
         params = {
             'desc': 'epoch progress',
-            'smoothing': 0.01
+            'smoothing': 0.01,
+            'total': traindata.array.shape[0]
         }
 
         for e in range(self.epochs):  # loop over the dataset multiple times
             epoch_loss = 0
             epoch_acc = 0
             epoch_len = 0
-            for x, y in tqdm(trainloader, **params):
-                x = x.to(device)
-                y = y.to(device)
+            for batch in tqdm(trainloader, **params):
+                x = batch[:, 1:].to(device)
+                y = batch[:, 0].unsqueeze(0).T.to(device)
+
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
@@ -210,9 +178,31 @@ class NaiveFNN(object):
             zero_division=0
         ))
 
+    def test_dataloader(self):
+        traindata = Data(
+            self.store
+        )
+
+        trainloader = DataLoader(
+            dataset=traindata,
+            batch_size=50000,
+            shuffle=False,
+            num_workers=4
+        )
+
+        for row in trainloader:
+            x = row[:, 1:]
+            y = row[:, 0]
+
+            print(x)
+            print(y)
+
+            break
+
     def run(self):
         self.train()
         self.validate()
+        # self.test_dataloader()
 
 
 def main():
