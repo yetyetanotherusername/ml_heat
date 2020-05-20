@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, IterableDataset
 
 from ml_heat.preprocessing.transform_data import DataTransformer
+from ml_heat.helper import plot_timings
 
 
 dt = DataTransformer()
@@ -87,7 +88,7 @@ class NaiveFNN(object):
             dataset=traindata,
             batch_size=50000,
             shuffle=False,
-            num_workers=4
+            num_workers=1
         )
 
         params = {
@@ -133,27 +134,31 @@ class NaiveFNN(object):
 
         sxnet = SXNet()
         sxnet.to(device)
-        sxnet.load_state_dict(torch.load(self.model_store))
+        # sxnet.load_state_dict(torch.load(self.model_store))
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-        testdata = Data(
-            self.partition['validation'],
-            self.store
-        )
-
+        testdata = Data(self.store)
         testloader = DataLoader(
             testdata,
-            batch_size=1,
+            batch_size=50000,
             shuffle=False,
-            num_workers=4
+            num_workers=1
         )
 
         y_pred_list = []
         y_list = []
         sxnet.eval()
+
+        params = {
+            'desc': 'epoch progress',
+            'smoothing': 0.01,
+            'total': testdata.array.shape[0] // testloader.batch_size
+        }
+
         with torch.no_grad():
-            for x, y in tqdm(testloader, desc='validation'):
-                x = x[-1, :, :].to(device)
+            for batch in tqdm(testloader, **params):
+                x = batch[:, 1:].to(device)
+                y = batch[:, 0].unsqueeze(0).T
                 y_test_pred = sxnet(x)
                 y_test_pred = torch.sigmoid(y_test_pred)
                 y_pred_tag = torch.round(y_test_pred)
