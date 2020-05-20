@@ -605,6 +605,8 @@ class DataTransformer(object):
 
         self.raw_store_path = os.path.join(self.store_path, 'rawdata.hdf5')
         self.model_store = os.path.join(self.store_path, 'models')
+        if not os.path.exists(self.model_store):
+            os.mkdir(self.model_store)
 
         self._animal_orga_map = None
 
@@ -671,8 +673,6 @@ class DataTransformer(object):
         if self.update is True:
 
             os.system(f'rm -rf {self.zarr_store}')
-            sync_path = os.path.join(self.data_dump, 'process.sync')
-            os.system(f'rm -rf {sync_path}')
 
             for animal_id in tqdm(os.listdir(self.feather_store)):
                 file = os.path.join(self.feather_store, animal_id)
