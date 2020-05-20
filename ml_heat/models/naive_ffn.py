@@ -1,7 +1,9 @@
 import os
+import math
 import numpy as np
 from tqdm import tqdm
 import zarr
+from itertools import islice
 from sklearn.metrics import classification_report, confusion_matrix
 
 import torch
@@ -14,6 +16,22 @@ from ml_heat.preprocessing.transform_data import DataTransformer
 
 
 dt = DataTransformer()
+
+
+def worker_init_fn(worker_id):
+    worker_info = torch.utils.data.get_worker_info()
+    dataset = worker_info.dataset  # the dataset copy in this worker process
+    overall_start = dataset.start
+    overall_end = dataset.end
+    # configure the dataset to only process the split workload
+    per_worker = int(
+        math.ceil(
+            (overall_end - overall_start) / float(worker_info.num_workers)
+        )
+    )
+    worker_id = worker_info.id
+    dataset.start = overall_start + worker_id * per_worker
+    dataset.end = min(dataset.start + per_worker, overall_end)
 
 
 class SXNet(nn.Module):
@@ -29,23 +47,32 @@ class SXNet(nn.Module):
         self.bn3 = nn.BatchNorm1d(1000)
 
     def forward(self, X):
-        X = F.selu(self.bn1(self.layer1(X)))
-        X = F.selu(self.bn2(self.layer2(X)))
-        X = F.selu(self.bn3(self.layer3(X)))
+        X = F.relu(self.bn1(self.layer1(X)))
+        X = F.relu(self.bn2(self.layer2(X)))
+        X = F.relu(self.bn3(self.layer3(X)))
         y = self.layer4(X)
 
         return y
 
 
 class Data(IterableDataset):
-    def __init__(self, path):
+    def __init__(self, path, start=None, end=None):
         super(Data, self).__init__()
-
         store = zarr.NestedDirectoryStore(path)
         self.array = zarr.open(store, mode='r')
 
+        if start is None:
+            start = 0
+        if end is None:
+            end = self.array.shape[0]
+
+        assert end > start
+
+        self.start = start
+        self.end = end
+
     def __iter__(self):
-        return iter(self.array)
+        return islice(self.array, self.start, self.end)
 
 
 class NaiveFNN(object):
@@ -87,7 +114,9 @@ class NaiveFNN(object):
             dataset=traindata,
             batch_size=50000,
             shuffle=False,
-            num_workers=1
+            num_workers=os.cpu_count(),
+            pin_memory=True,
+            worker_init_fn=worker_init_fn
         )
 
         params = {
@@ -141,7 +170,9 @@ class NaiveFNN(object):
             testdata,
             batch_size=50000,
             shuffle=False,
-            num_workers=1
+            num_workers=os.cpu_count(),
+            pin_memory=True,
+            worker_init_fn=worker_init_fn
         )
 
         y_pred_list = []
@@ -189,12 +220,13 @@ class NaiveFNN(object):
 
         trainloader = DataLoader(
             dataset=traindata,
-            batch_size=50000,
+            batch_size=1,
             shuffle=False,
-            num_workers=4
+            num_workers=4,
+            worker_init_fn=worker_init_fn
         )
 
-        for row in trainloader:
+        for idx, row in enumerate(trainloader):
             x = row[:, 1:]
             y = row[:, 0]
 

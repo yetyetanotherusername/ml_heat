@@ -636,8 +636,6 @@ class DataTransformer(object):
             filtered_orga_ids = [
                 x for x in self.organisation_ids if x not in loaded_orgas]
 
-        # TODO: try running the organisation loop in processes now that memory
-        # usage is fixed
         # for organisation_id in tqdm(
         #         filtered_orga_ids, desc='organisation loop'):
         #     transform_organisation(
@@ -769,7 +767,7 @@ class DataTransformer(object):
             store = zarr.NestedDirectoryStore(self.zarr_store)
             z_arr = zarr.creation.create(
                 (0, 290),
-                chunks=(50000, 290),
+                chunks=(50000, None),
                 store=store,
                 dtype='f4'
             )
