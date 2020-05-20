@@ -1,7 +1,13 @@
 import os
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+import torch
+import time
+
 from cycler import cycler
+from matplotlib.patches import Rectangle
+from itertools import count, islice
 
 
 def plot_setup():
@@ -39,3 +45,77 @@ def duplicate_shift(series, shifts, name=None):
     if name is not None:
         frame.columns = [f'{name}{column}' for column in frame.columns]
     return frame
+
+
+def plot_timings(loader, n_batches, model_time=0.2, max_time=2.5):
+
+    fig, ax = plt.subplots()
+    ax.set_axisbelow(True)
+    ax.yaxis.grid(which="major", color='black', linewidth=1)
+
+    zero_time = time.time()
+
+    worker_ids = {}
+    worker_count = count()
+
+    for result in islice(loader, n_batches):
+        start = time.time()
+        time.sleep(model_time)
+        end = time.time()
+
+        # check if already batched
+        if isinstance(result[0], torch.Tensor):
+            result = zip(*result)
+
+        batch = []
+        for item in result:
+            data, worker, t1, t2 = tuple(map(scalar, item))
+
+            # fix worker position in plot
+            if worker != -1:
+                if worker not in worker_ids:
+                    worker_ids[worker] = next(worker_count)
+                worker = worker_ids[worker]
+
+            plot_time_box(data, worker, t1 - zero_time, t2 - zero_time, ax)
+            batch.append(data)
+
+        batch_str = ",".join(map(str, batch))
+        plot_time_box(batch_str, -1, start - zero_time,
+                      end - zero_time, ax, color='firebrick')
+
+    max_worker = len(worker_ids) - 1
+
+    ax.set_xlim(0, max_time)
+    ax.set_ylim(-1.5, max_worker + 0.5)
+    ax.set_xticks(np.arange(0, max_time, 0.2))
+    ax.set_yticks(np.arange(-1, max_worker + 1, 1))
+    ax.set_yticklabels([])
+    ax.tick_params(axis='y', colors=(0, 0, 0, 0))
+
+    fig.set_figwidth(16)
+    fig.set_figheight((max_worker + 2) * 0.5)
+
+    ax.xaxis.label.set_color('gray')
+    ax.tick_params(axis='x', colors='gray')
+    for spine in ax.spines.values():
+        spine.set_edgecolor((0, 0, 0, 0))
+
+
+def scalar(x):
+    return x.item() if hasattr(x, 'item') else x
+
+
+def plot_time_box(data, worker, t1, t2, ax, color='steelblue'):
+    x = t1
+    y = worker - 0.25
+    w = t2 - t1
+    h = 0.6
+
+    rect = Rectangle((x, y), w, h, linewidth=2,
+                     edgecolor='black', facecolor=color)
+
+    ax.add_patch(rect)
+
+    ax.text(x + (w * 0.5), y + (h * 0.5), str(data), va='center',
+            ha='center', color='white', weight='bold')

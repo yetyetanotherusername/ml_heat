@@ -11,7 +11,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, IterableDataset
 
 from ml_heat.preprocessing.transform_data import DataTransformer
-from ml_heat.helper import plot_timings
 
 
 dt = DataTransformer()
@@ -94,7 +93,7 @@ class NaiveFNN(object):
         params = {
             'desc': 'epoch progress',
             'smoothing': 0.01,
-            'total': traindata.array.shape[0] // trainloader.batch_size
+            'total': traindata.array.shape[0] // trainloader.batch_size + 1
         }
 
         for e in range(self.epochs):  # loop over the dataset multiple times
@@ -150,9 +149,9 @@ class NaiveFNN(object):
         sxnet.eval()
 
         params = {
-            'desc': 'epoch progress',
+            'desc': 'validation progress',
             'smoothing': 0.01,
-            'total': testdata.array.shape[0] // testloader.batch_size
+            'total': testdata.array.shape[0] // testloader.batch_size + 1
         }
 
         with torch.no_grad():
