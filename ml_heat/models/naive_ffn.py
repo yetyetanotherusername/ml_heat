@@ -93,7 +93,7 @@ class NaiveFNN(object):
         params = {
             'desc': 'epoch progress',
             'smoothing': 0.01,
-            'total': traindata.array.shape[0]
+            'total': traindata.array.shape[0] // trainloader.batch_size
         }
 
         for e in range(self.epochs):  # loop over the dataset multiple times
