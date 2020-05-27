@@ -13,7 +13,6 @@ from sxapi import LowLevelAPI, APIv2
 from sxapi.low import PrivateAPIv2
 from anthilldb.client import DirectDBClient
 from anthilldb.settings import get_config_by_name
-from requests.exceptions import ConnectionError
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -236,27 +235,6 @@ class DataLoader(object):
             'smoothing': 0.001
         }
 
-        tuple_list = []
-        for animal in tqdm(animals, **kwargs):
-            try:
-                tuple_list.append(
-                    (animal['_id'],
-                     self.privateapi.get_events_by_animal_id(
-                        animal['_id'], True)))
-
-            except ConnectionError:
-                self.privateapi = PrivateAPIv2(
-                    api_key=PRIVATE_LIVE_TOKEN, endpoint=PRIVATE_ENDPOINTv2)
-
-                tuple_list.append(
-                    (animal['_id'],
-                     self.privateapi.get_events_by_animal_id(
-                        animal['_id'], True)))
-
-        event_dict = {
-            tupl[0]: tupl[1] for tupl in tuple_list
-        }
-
         with self.writefile() as file:
             if self._animal_orga_map is None:
                 try:
@@ -270,6 +248,9 @@ class DataLoader(object):
             for animal in tqdm(animals, **kwargs):
                 organisation_id = animal['organisation_id']
                 orga_group = file[f'data/{organisation_id}']
+
+                events = self.privateapi.get_events_by_animal_id(
+                    animal['_id'], True)
 
                 self._animal_orga_map[animal['_id']] = organisation_id
 
@@ -291,7 +272,7 @@ class DataLoader(object):
 
                 a_subgroup.create_dataset(
                     name='events',
-                    data=json.dumps(event_dict[animal['_id']]))
+                    data=json.dumps(events))
 
             try:
                 lookup_group = file.create_group('lookup')
