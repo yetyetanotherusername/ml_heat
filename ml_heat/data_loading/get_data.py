@@ -4,11 +4,9 @@
 import os
 import json
 import datetime
-import pickle
 import h5py as h5
 import pandas as pd
 from tqdm import tqdm
-from collections import defaultdict
 from sxapi import LowLevelAPI, APIv2
 from sxapi.low import PrivateAPIv2
 from anthilldb.client import DirectDBClient
@@ -39,43 +37,6 @@ PRIVATE_ENDPOINTv2 = 'http://127.0.0.1:8787/internapi/v2/'
 
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.abspath(
     os.path.join(os.getcwd(), 'key.json'))
-
-
-def download_key(db_client, key, metrics, from_dt, to_dt, output_file_path):
-    # can only load 400 days at once
-    chunks = []
-    while (to_dt - from_dt).total_seconds() >= 399 * 24 * 60 * 60:
-        chunk = (from_dt, from_dt + datetime.timedelta(days=399))
-        chunks.append(chunk)
-        from_dt += datetime.timedelta(days=399)
-
-    chunks.append((from_dt, to_dt))
-
-    frames = []
-    for chunk in chunks:
-        timeseries = db_client.get_metrics(key, metrics, chunk[0], chunk[1])
-
-        animal_data = defaultdict(lambda: [None] * len(metrics))
-        for i, metric_data in enumerate(timeseries):
-            for p in metric_data.all(raw=True):
-                tzinfo = datetime.timezone(
-                    datetime.timedelta(seconds=p.ts_offset))
-                dt_str = datetime.datetime.fromtimestamp(p.ts).astimezone(
-                    tzinfo)
-                animal_data[dt_str][i] = p.value
-
-        frames.append(pd.DataFrame(animal_data).T.sort_index())
-
-    frame = pd.concat(frames).sort_index()
-    frame = frame.loc[~frame.index.duplicated(keep='first')]
-
-    if not frame.empty:
-        frame.columns = metrics
-
-    writepath = os.path.join(output_file_path, f'{key}')
-
-    with open(writepath, 'wb') as file:
-        pickle.dump(frame, file)
 
 
 class DataLoader(object):
@@ -249,6 +210,14 @@ class DataLoader(object):
                 organisation_id = animal['organisation_id']
                 orga_group = file[f'data/{organisation_id}']
 
+                if animal['_id'] in orga_group.keys():
+                    a_subgroup = file[
+                        f'data/{organisation_id}/{animal["_id"]}']
+
+                    if 'animal' in a_subgroup.keys():
+                        if 'events' in a_subgroup.keys():
+                            continue
+
                 events = self.privateapi.get_events_by_animal_id(
                     animal['_id'], True)
 
@@ -322,7 +291,7 @@ class DataLoader(object):
             # check if csv or pickle file exists already
             if os.path.exists(temp_path):
                 files = os.listdir(temp_path)
-                keys = [string.replace('.csv', '') for string in files]
+                keys = list(set([string.split('|')[0] for string in files]))
                 animal_ids = [
                     animal_id for animal_id in animal_ids
                     if animal_id not in keys]
@@ -338,56 +307,68 @@ class DataLoader(object):
             'smoothing': 0.001
         }
 
-        # for _id in tqdm(animal_ids, **kwargs):
-        #     download_key(
-        #         self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
-
-        results = [self.thread_pool.submit(
-            download_key, self.dbclient, _id, metrics, from_dt, to_dt,
-            temp_path) for _id in animal_ids]
-
-        kwargs = {
-            'total': len(results),
-            'unit': 'files',
-            'unit_scale': True,
-            'leave': True,
-            'desc': 'Sensordata progress',
-            'smoothing': 0.01
-        }
-        for f in tqdm(as_completed(results), **kwargs):
-            pass
+        for _id in tqdm(animal_ids, **kwargs):
+            self.download_metrics(
+                self.dbclient, _id, metrics, from_dt, to_dt, temp_path)
 
         print('Download finished...')
 
-    def pickle_to_hdf(self):
+    def download_metrics(
+            db_client, key, metrics, from_dt, to_dt, output_file_path):
+
+        chunks = []
+        while (to_dt - from_dt).total_seconds() >= 399 * 24 * 60 * 60:
+            chunk = (from_dt, from_dt + datetime.timedelta(days=399))
+            chunks.append(chunk)
+            from_dt += datetime.timedelta(days=398)
+        chunks.append((from_dt, to_dt))
+
+        for idx, chunk in enumerate(chunks):
+            all_timeseries = db_client.get_multi_metrics(
+                key, metrics, chunk[0], chunk[1])
+            file_name = os.path.realpath(
+                os.path.join(output_file_path, f"{key}|{idx}.csv"))
+            with open(file_name, "w") as fp:
+                all_timeseries.to_csv(fp)
+                fp.flush()
+        return key
+
+    def csv_to_hdf(self):
         print('Writing data to hdf file...')
 
         temp_path = os.path.join(self.store_path, 'temp')
-        files = [s for s in os.listdir(temp_path) if not s.endswith('.csv')]
+        files = [s for s in os.listdir(temp_path) if s.endswith('.csv')]
         filepaths = [os.path.join(temp_path, p) for p in files]
+        animal_ids = list(set([s.split('|')[0] for s in files]))
 
-        for filepath in tqdm(filepaths):
-            animal_id = filepath.split('/')[-1]
-            organisation_id = self.organisation_id_for_animal_id(animal_id)
+        iterdict = {}
+        for animal_id in tqdm(animal_ids, desc='Parsing filepaths'):
+            iterdict[animal_id] = [
+                path for path in filepaths if path.split(
+                    os.sep)[-1].startswith(animal_id)]
 
-            with open(filepath, 'rb') as file:
-                try:
-                    frame = pickle.load(file)
-                except EOFError:
-                    os.remove(filepath)
-                    continue
-                except Exception as e:
-                    print(e)
-                    print(animal_id)
-                    continue
+        for key in tqdm(iterdict.keys()):
+            organisation_id = self.organisation_id_for_animal_id(key)
+
+            framelist = []
+            for filepath in iterdict[key]:
+                framelist.append(pd.read_csv(filepath, index_col='ts'))
+
+            frame = pd.concat(framelist).sort_index()
+            frame = frame.loc[~frame.index.duplicated(keep='first')]
+
+            frame.index = pd.to_datetime(
+                frame.index, unit='s').rename('datetime')
 
             if frame.empty:
                 os.remove(filepath)
                 continue
 
+            frame.__name__ = 'frame'
+
             frame.to_hdf(
                 self.rawdata_path,
-                key=f'data/{organisation_id}/{animal_id}/sensordata',
+                key=f'data/{organisation_id}/{key}/sensordata',
                 complevel=9)
 
             os.remove(filepath)
@@ -396,8 +377,6 @@ class DataLoader(object):
         print('Cleaning up...')
         os.rmdir(temp_path)
         print('Done!')
-
-    # def count_animals(self):
 
     def animal_count_per_orga(self):
         organisation_ids = self.organisation_ids
@@ -414,7 +393,7 @@ class DataLoader(object):
         self.load_animals(organisation_ids=organisation_ids, update=update)
         self.load_sensordata_from_db(
             organisation_ids=organisation_ids, update=update)
-        self.pickle_to_hdf()
+        self.csv_to_hdf()
 
     def sanitize_organisation(self, organisation):
         organisation.pop('name', None)
