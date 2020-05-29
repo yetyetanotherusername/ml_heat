@@ -314,7 +314,7 @@ class DataLoader(object):
         print('Download finished...')
 
     def download_metrics(
-            db_client, key, metrics, from_dt, to_dt, output_file_path):
+            self, db_client, key, metrics, from_dt, to_dt, output_file_path):
 
         chunks = []
         while (to_dt - from_dt).total_seconds() >= 399 * 24 * 60 * 60:
