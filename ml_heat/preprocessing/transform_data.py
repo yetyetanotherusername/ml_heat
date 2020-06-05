@@ -474,7 +474,7 @@ def transform_animal(organisation, animal_id, readpath, readfile):
 
     # remove localization -> index is localtime without tzinfo
     # needed so we can have all animal indices in one column
-    data = data.tz_localize(None)
+    # data = data.tz_localize(None)
 
     # normalize all timestamps to 10minute base
     data.index = data.index.round('10T')
@@ -503,8 +503,8 @@ def transform_organisation(organisation_id, readpath, temp_path):
             lambda x: x != 'organisation', animal_ids))
 
         # out of ram constraints, we cannot process such big organisations
-        if len(animal_ids) > 1500:
-            return organisation_id
+        # if len(animal_ids) > 1500:
+        #     return organisation_id
 
         framelist = []
         for animal_id in tqdm(
