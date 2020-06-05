@@ -12,7 +12,9 @@ from tqdm import tqdm
 import multiprocessing
 from concurrent.futures import (
     ProcessPoolExecutor,
-    as_completed
+    as_completed,
+    wait,
+    FIRST_EXCEPTION
 )
 
 from sklearn.preprocessing import StandardScaler
@@ -663,7 +665,10 @@ class DataTransformer(object):
             }
 
             for f in tqdm(as_completed(results), **kwargs):
-                pass
+                try:
+                    f.result()
+                except Exception as e:
+                    print(e)
 
         os.system('tput ed')
 
