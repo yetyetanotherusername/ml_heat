@@ -350,13 +350,13 @@ def add_labels(inframe, animal, events):
 
 def add_features(inframe, organisation, animal):
     # shorten string fields (hdf5 serde has limits on string length)
-    race = animal.get('race', 'N/A')
-    if race is None:
-        race = 'N/A'
+    # race = animal.get('race', 'N/A')
+    # if race is None:
+    #     race = 'N/A'
 
-    if len(race) > 10:
-        race = [word[0] + '_' for word in animal['race'].split('_')]
-        race = ''.join(race)
+    # if len(race) > 10:
+    #     race = [word[0] + '_' for word in animal['race'].split('_')]
+    #     race = ''.join(race)
 
     # partner_id = organisation.get('partner_id', 'N/A')
     # if partner_id is None:

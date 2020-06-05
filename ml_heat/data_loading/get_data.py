@@ -3,14 +3,17 @@
 
 import os
 import json
+import tables
 import datetime
 import h5py as h5
 import pandas as pd
+from pickle import UnpicklingError
 from tqdm import tqdm
 from sxapi import LowLevelAPI, APIv2
 from sxapi.low import PrivateAPIv2
 from anthilldb.client import DirectDBClient
 from anthilldb.settings import get_config_by_name
+from tables.exceptions import HDF5ExtError
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -361,17 +364,17 @@ class DataLoader(object):
                 frame.index, unit='s').rename('datetime')
 
             if frame.empty:
-                os.remove(filepath)
+                for filepath in iterdict[key]:
+                    os.remove(filepath)
                 continue
-
-            frame.__name__ = 'frame'
 
             frame.to_hdf(
                 self.rawdata_path,
                 key=f'data/{organisation_id}/{key}/sensordata',
                 complevel=9)
 
-            os.remove(filepath)
+            for filepath in iterdict[key]:
+                os.remove(filepath)
 
         print('Finished saving rawdata...')
         print('Cleaning up...')
@@ -388,17 +391,100 @@ class DataLoader(object):
 
         return pd.DataFrame(data)
 
+    def sanitize_organisation(self, organisation):
+        organisation.pop('name', None)
+        organisation.pop('account', None)
+        return organisation
+
+    def fix_dt_index(self):
+        # collect organisations & animals
+        iterdict = {}
+
+        kwargs = {
+            'desc': 'Discovering data',
+            'smoothing': 0.01
+        }
+
+        with self.writefile() as file:
+            organisation_ids = file['data'].keys()
+
+            for organisation_id in tqdm(organisation_ids, **kwargs):
+                iterdict[organisation_id] = []
+                animal_ids = [
+                    key for key in file[f'data/{organisation_id}'].keys()
+                    if key != 'organisation'
+                ]
+
+                for animal_id in animal_ids:
+                    if 'sensordata' in file[
+                            f'data/{organisation_id}/{animal_id}'].keys():
+
+                        iterdict[organisation_id].append(animal_id)
+
+        kwargs['desc'] = 'Converting index datatype'
+
+        for organisation_id, animal_ids in tqdm(iterdict.items(), **kwargs):
+            kwargs['desc'] = 'Processing animals'
+            kwargs['leave'] = False
+            kwargs['position'] = 1
+            for animal_id in tqdm(animal_ids, **kwargs):
+                try:
+                    frame = pd.read_hdf(
+                        self.rawdata_path,
+                        key=f'data/{organisation_id}/{animal_id}/sensordata'
+                    )
+                except HDF5ExtError as e:
+                    print(e)
+                    print(f'data read failed on animal {animal_id}, '
+                          f'organisation {organisation_id}')
+                    tables.file._open_files.close_all()
+
+                    continue
+
+                except UnpicklingError as e:
+                    print(e)
+                    print(f'data read failed on animal {animal_id}, '
+                          f'organisation {organisation_id}')
+                    tables.file._open_files.close_all()
+
+                    continue
+
+                if isinstance(
+                        frame.index, pd.core.indexes.datetimes.DatetimeIndex):
+                    continue
+
+                frame.index = pd.to_datetime(
+                    [int(dt.timestamp()) for dt in frame.index],
+                    unit='s'
+                )
+
+                frame.to_hdf(
+                    self.rawdata_path,
+                    key=f'data/{organisation_id}/{animal_id}/sensordata',
+                    complevel=9
+                )
+
+    def del_sensordata(self):
+        """
+        In rare cases, pandas can produce broken datasets when writing to
+        hdf5, this function can be used to delete them so they can be either
+        downloaded again or discarded
+
+        USE WITH UTTERMOST CARE
+        """
+
+        organisation_id = '5af01e0210bac288dba249ad'
+        animal_id = '5b6419ff36b96c52808951b1'
+
+        with self.writefile() as file:
+            del file[f'data/{organisation_id}/{animal_id}/sensordata']
+
     def run(self, organisation_ids=None, update=False):
         self.load_organisations(update)
         self.load_animals(organisation_ids=organisation_ids, update=update)
         self.load_sensordata_from_db(
             organisation_ids=organisation_ids, update=update)
         self.csv_to_hdf()
-
-    def sanitize_organisation(self, organisation):
-        organisation.pop('name', None)
-        organisation.pop('account', None)
-        return organisation
 
 
 def main():
