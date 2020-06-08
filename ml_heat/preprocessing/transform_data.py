@@ -13,8 +13,6 @@ import multiprocessing
 from concurrent.futures import (
     ProcessPoolExecutor,
     as_completed,
-    wait,
-    FIRST_EXCEPTION
 )
 
 from sklearn.preprocessing import StandardScaler
@@ -476,7 +474,7 @@ def transform_animal(organisation, animal_id, readpath, readfile):
 
     # remove localization -> index is localtime without tzinfo
     # needed so we can have all animal indices in one column
-    # data = data.tz_localize(None)
+    data = data.tz_localize(None)
 
     # normalize all timestamps to 10minute base
     data.index = data.index.round('10T')
