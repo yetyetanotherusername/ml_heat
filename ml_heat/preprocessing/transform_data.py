@@ -10,6 +10,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import multiprocessing
+import dask as dd
+
+from dask.diagnostics import ProgressBar
+from dask_ml.model_selection import train_test_split
+
 from concurrent.futures import (
     ProcessPoolExecutor,
     as_completed,
@@ -32,7 +37,8 @@ from ml_heat.helper import (
 def fnn_worker(feather_store,
                z_arr,
                animal_id,
-               shifts=range(288)):
+               shifts=range(288),
+               fix_imbalance=False):
 
     data = load_animal(feather_store, animal_id)
 
@@ -49,6 +55,15 @@ def fnn_worker(feather_store,
     heat_shift = duplicate_shift(data.heat_feature, shifts, 'heat_feature')
     data = pd.concat([data, heat_shift], axis=1).dropna()
     data = data.drop(['heat_feature'], axis=1)
+
+    if fix_imbalance:
+        no_heat_idx = data[data.annotation == 0].index
+        no_heat_len = len(no_heat_idx)
+        heat_len = data[data.annotation == 1].shape[0]
+        overhang = no_heat_len - heat_len
+        to_drop = np.random.choice(no_heat_idx, overhang, replace=False)
+        data = data[~data.index.isin(to_drop)]
+
     z_arr.append(data.values)
     os.remove(os.path.join(feather_store, animal_id))
     return animal_id
@@ -662,7 +677,13 @@ class DataTransformer(object):
                 'smoothing': 0.01
             }
 
+            cnt = 0
             for f in tqdm(as_completed(results), **kwargs):
+                if cnt >= 10:
+                    os.system('tput cup 1 0 && tput ed && tput cup 0 0')
+                    cnt = 0
+                cnt += 1
+                
                 try:
                     f.result()
                 except Exception as e:
@@ -766,17 +787,14 @@ class DataTransformer(object):
         return None
 
     def store_to_zarr(self):
-        if not os.path.exists(self.zarr_store):
-            store = zarr.NestedDirectoryStore(self.zarr_store)
-            z_arr = zarr.creation.create(
-                (0, 290),
-                chunks=(50000, None),
-                store=store,
-                dtype='f4'
-            )
-        else:
-            store = zarr.NestedDirectoryStore(self.zarr_store)
-            z_arr = zarr.open(store)
+        store = zarr.DirectoryStore(self.zarr_store)
+        group = zarr.hierarchy.group(store=store)
+        z_arr = group.require_dataset(
+            'origin',
+            shape=(0, 290),
+            chunks=(50000, None),
+            dtype='f4'
+        )
 
         animal_ids = os.listdir(self.feather_store)
 
@@ -793,7 +811,8 @@ class DataTransformer(object):
             fnn_worker(
                 self.feather_store,
                 z_arr,
-                animal_id
+                animal_id,
+                fix_imbalance=True
             )
 
         # with ProcessPoolExecutor(os.cpu_count()) as process_pool:
@@ -809,6 +828,50 @@ class DataTransformer(object):
         #         pass
 
         return None
+
+    def validation_split(self):
+        pbar = ProgressBar()
+        pbar.register()
+
+        array = dd.array.from_zarr(
+            os.path.join(self.zarr_store, 'origin'))
+
+        trainset, testset = train_test_split(
+            array,
+            shuffle=True,
+            test_size=0.3,
+        )
+
+        testset = dd.array.rechunk(testset, chunks=(50000, 290))
+        trainset = dd.array.rechunk(trainset, chunks=(50000, 290))
+
+        testset.to_zarr(
+            os.path.join(self.zarr_store, 'testset'),
+            overwrite=True
+        )
+
+        trainset = dd.array.random.permutation(trainset)
+
+        trainset.to_zarr(
+            os.path.join(self.zarr_store, 'trainset1'),
+            overwrite=True
+        )
+
+        # trainset = dd.array.random.permutation(trainset)
+
+        # trainset.to_zarr(
+        #     os.path.join(self.zarr_store, 'trainset2'),
+        #     overwrite=True
+        # )
+
+        # trainset = dd.array.random.permutation(trainset)
+
+        # trainset.to_zarr(
+        #     os.path.join(self.zarr_store, 'trainset3'),
+        #     overwrite=True
+        # )
+
+        pbar.unregister()
 
     def test(self):
         plt = plot_setup()
@@ -867,7 +930,7 @@ class DataTransformer(object):
     def test_feature(self):
         plt = plot_setup()
 
-        frame = load_animal(self.feather_store, '59e75f2b9e182f68cf25721d')
+        frame = load_animal(self.zarr_store, '59e75f2b9e182f68cf25721d')
         frame = frame.reset_index().set_index('datetime')
 
         ax = frame[['act', 'act_group_mean', 'heat_feature']].plot()
@@ -912,24 +975,29 @@ class DataTransformer(object):
         plt.show()
 
     def test_zarr(self):
-        store = zarr.NestedDirectoryStore(self.zarr_store)
-        z_arr = zarr.open(store)
-        print(z_arr.info)
-        print(z_arr[0, :])
+        store = zarr.DirectoryStore(self.zarr_store)
+        group = zarr.open(store)
+        arr1 = group['trainset1']
+        # arr2 = group['trainset2']
+
+        print(arr1[0])
+        print(arr1.info)
+        # print(arr2[0])
 
     def run(self):
         self.clear_data()
         self.arrange_data()
         self.normalize_numeric_cols()
         self.store_to_zarr()
+        self.validation_split()
         # self.test()
         # self.test_feature()
         # self.test_zarr()
 
 
 def main():
-    # transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
-    transformer = DataTransformer()
+    transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
+    # transformer = DataTransformer()
     transformer.run()
 
 

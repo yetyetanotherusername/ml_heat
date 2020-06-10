@@ -21,3 +21,5 @@ cattledb
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
 -e git+ssh://git@bitbucket.org/smaxtec/anthilldb.git#egg=anthilldb
 sxutils @ git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
+dask[dataframe, diagnostics]
+dask-ml

@@ -58,7 +58,7 @@ class SXNet(nn.Module):
 class Data(IterableDataset):
     def __init__(self, path, start=None, end=None):
         super(Data, self).__init__()
-        store = zarr.NestedDirectoryStore(path)
+        store = zarr.DirectoryStore(path)
         self.array = zarr.open(store, mode='r')
 
         if start is None:
@@ -106,10 +106,10 @@ class NaiveFNN(object):
             lr=self.learning_rate
         )
 
-        criterion = nn.BCEWithLogitsLoss(
-            pos_weight=torch.FloatTensor([250.]).to(device))
+        criterion = nn.BCEWithLogitsLoss()
+            # pos_weight=torch.FloatTensor([250.]).to(device))
 
-        traindata = Data(self.store)
+        traindata = Data(os.path.join(self.store, 'trainset1'))
         trainloader = DataLoader(
             dataset=traindata,
             batch_size=50000,
@@ -122,7 +122,8 @@ class NaiveFNN(object):
         params = {
             'desc': 'epoch progress',
             'smoothing': 0.01,
-            'total': traindata.array.shape[0] // trainloader.batch_size + 1
+            'total': math.ceil(
+                traindata.array.shape[0] / trainloader.batch_size)
         }
 
         for e in range(self.epochs):  # loop over the dataset multiple times
@@ -165,7 +166,7 @@ class NaiveFNN(object):
         # sxnet.load_state_dict(torch.load(self.model_store))
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-        testdata = Data(self.store)
+        testdata = Data(os.path.join(self.store, 'trainset1'))
         testloader = DataLoader(
             testdata,
             batch_size=50000,
@@ -182,15 +183,14 @@ class NaiveFNN(object):
         params = {
             'desc': 'validation progress',
             'smoothing': 0.01,
-            'total': testdata.array.shape[0] // testloader.batch_size + 1
+            'total': math.ceil(testdata.array.shape[0] / testloader.batch_size)
         }
 
         with torch.no_grad():
             for batch in tqdm(testloader, **params):
                 x = batch[:, 1:].to(device)
                 y = batch[:, 0].unsqueeze(0).T
-                y_test_pred = sxnet(x)
-                y_test_pred = torch.sigmoid(y_test_pred)
+                y_test_pred = torch.sigmoid(sxnet(x))
                 y_pred_tag = torch.round(y_test_pred)
                 y_pred_list.append(y_pred_tag.cpu().numpy())
                 y_list.append(y.numpy())
@@ -232,8 +232,6 @@ class NaiveFNN(object):
 
             print(x)
             print(y)
-
-            break
 
     def run(self):
         self.train()
