@@ -633,6 +633,25 @@ class DataTransformer(object):
                 self._organisation_ids = list(file['data'].keys())
         return self._organisation_ids
 
+    def animal_ids_for_organisations(self, organisation_ids):
+        animal_ids = []
+        with self.readfile() as file:
+            for organisation_id in organisation_ids:
+                ids = list(file[f'data/{organisation_id}'].keys())
+                filtered = [x for x in ids if x != 'organisation']
+                animal_ids += filtered
+        return animal_ids
+
+    def animal_count_per_orga(self, organisation_ids=None):
+        if organisation_ids is None:
+            organisation_ids = self.organisation_ids
+
+        data = {}
+        for organisation_id in organisation_ids:
+            animal_ids = self.animal_ids_for_organisations([organisation_id])
+            data[organisation_id] = len(animal_ids)
+        return pd.Series(data)
+
     def arrange_data(self):
         print('Transforming data...')
 
@@ -648,6 +667,11 @@ class DataTransformer(object):
             )
             filtered_orga_ids = [
                 x for x in self.organisation_ids if x not in loaded_orgas]
+
+        if len(filtered_orga_ids) > 1:
+            orga_sizes = self.animal_count_per_orga(filtered_orga_ids)
+            filtered_orga_ids = orga_sizes.sort_values(
+                ascending=False).index.to_list()
 
         # for organisation_id in tqdm(
         #         filtered_orga_ids, desc='Total progress'):
