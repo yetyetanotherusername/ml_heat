@@ -507,7 +507,6 @@ def transform_animal(organisation, animal_id, readpath, readfile):
 
 
 def transform_organisation(organisation_id, readpath, temp_path):
-    position = multiprocessing.current_process()._identity[0] + 1
     with h5.File(readpath, 'r') as readfile:
 
         organisation = json.loads(
@@ -522,6 +521,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
         #     return organisation_id
 
         framelist = []
+        position = multiprocessing.current_process()._identity[0] + 1
         for animal_id in tqdm(
                 animal_ids,
                 leave=False,
@@ -548,7 +548,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
     groups = frame.index.unique(level='group_id')
     reslist = []
-    position = multiprocessing.current_process()._identity[0] + 1
     for group in tqdm(
             groups,
             leave=False,
@@ -567,7 +566,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
     frame = frame.sort_index()
 
     animal_ids = frame.index.unique(level='animal_id')
-    position = multiprocessing.current_process()._identity[0] + 1
     for animal_id in tqdm(
             animal_ids,
             leave=False,
@@ -652,7 +650,7 @@ class DataTransformer(object):
                 x for x in self.organisation_ids if x not in loaded_orgas]
 
         # for organisation_id in tqdm(
-        #         filtered_orga_ids, desc='organisation loop'):
+        #         filtered_orga_ids, desc='Total progress'):
         #     transform_organisation(
         #         organisation_id,
         #         self.raw_store_path,
@@ -677,13 +675,7 @@ class DataTransformer(object):
                 'smoothing': 0.01
             }
 
-            cnt = 0
             for f in tqdm(as_completed(results), **kwargs):
-                if cnt >= 10:
-                    os.system('tput cup 1 0 && tput ed && tput cup 0 0')
-                    cnt = 0
-                cnt += 1
-                
                 try:
                     f.result()
                 except Exception as e:
