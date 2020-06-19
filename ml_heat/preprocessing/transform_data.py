@@ -522,8 +522,6 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
         framelist = []
         position = multiprocessing.current_process()._identity[0] + 1
-        if position > os.cpu_count():
-            position = 1
         for animal_id in tqdm(
                 animal_ids,
                 leave=False,
