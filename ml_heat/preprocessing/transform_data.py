@@ -897,8 +897,8 @@ class DataTransformer(object):
 
         ax = frame.loc[
             :, ('act',
-                'temp',
-                'temp_filtered',
+                # 'temp',
+                # 'temp_filtered',
                 'act_group_mean',
                 'DIM',
                 'heat_feature')
@@ -985,8 +985,6 @@ class DataTransformer(object):
             label='deleted heats'
         )
 
-        plt.legend()
-
         plt.grid()
         plt.show()
 
@@ -1000,13 +998,84 @@ class DataTransformer(object):
         print(arr1.info)
         # print(arr2[0])
 
+    def report_plot(self):
+        plt = plot_setup()
+
+        frame = load_animal(self.feather_store, '59e75f2b9e182f68cf25721d')
+        frame = frame.reset_index().set_index('datetime')
+
+        # frame = frame.loc[
+        #     :, ('act',
+        #         # 'temp',
+        #         # 'temp_filtered',
+        #         'act_group_mean',
+        #         'DIM',
+        #         'heat_feature')
+        # ]
+
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True)
+
+        ax1.plot(frame.index, frame.act)
+        ax1.grid()
+        ax1.set_ylabel('Normalized Activity')
+        ax2.plot(frame.index, frame.act_group_mean)
+        ax2.grid()
+        ax2.set_ylabel('Normalized Group Activity')
+        ax3.plot(frame.index, frame.DIM)
+        ax3.grid()
+        ax3.set_ylabel('Normalized Lactation Status')
+        ax4.plot(frame.index, frame.heat_feature)
+        ax4.grid()
+        ax4.set_ylabel('Normalized Heat Feature')
+
+        axes = (ax1, ax2, ax3, ax4)
+
+        for ax in axes:
+
+            ymin, ymax = ax.get_ylim()
+
+            ax.fill_between(
+                frame.index.to_numpy(), ymin, ymax,
+                where=frame.cyclic.to_numpy(),
+                facecolor='g',
+                alpha=0.5,
+                label='cyclic heats'
+            )
+
+            ax.fill_between(
+                frame.index.to_numpy(), ymin, ymax,
+                where=frame.inseminated.to_numpy(),
+                facecolor='y',
+                alpha=0.5,
+                label='inseminated heats'
+            )
+
+            ax.fill_between(
+                frame.index.to_numpy(), ymin, ymax,
+                where=frame.pregnant.to_numpy(),
+                facecolor='b',
+                alpha=0.5,
+                label='pregnant heats'
+            )
+
+            ax.fill_between(
+                frame.index.to_numpy(), ymin, ymax,
+                where=frame.deleted.to_numpy(),
+                facecolor='r',
+                alpha=0.5,
+                label='deleted heats'
+            )
+
+        plt.show()
+
     def run(self):
         self.clear_data()
         self.arrange_data()
         self.normalize_numeric_cols()
         self.store_to_zarr()
-        self.validation_split()
+        # self.validation_split()
         # self.test()
+        # self.report_plot()
         # self.test_feature()
         # self.test_zarr()
 

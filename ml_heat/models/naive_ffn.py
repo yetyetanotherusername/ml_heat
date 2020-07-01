@@ -11,11 +11,16 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, IterableDataset
+from torch.utils.tensorboard import SummaryWriter
 
 from ml_heat.preprocessing.transform_data import DataTransformer
 
 
 dt = DataTransformer()
+writer = SummaryWriter(
+    os.path.join(
+        os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn',
+        'tensorboard'))
 
 
 def worker_init_fn(worker_id):
@@ -40,17 +45,29 @@ class SXNet(nn.Module):
         self.layer1 = nn.Linear(288 + 1, 1000)
         self.layer2 = nn.Linear(1000, 1000)
         self.layer3 = nn.Linear(1000, 1000)
-        self.layer4 = nn.Linear(1000, 1)
+        self.layer4 = nn.Linear(1000, 1000)
+        self.layer5 = nn.Linear(1000, 1000)
+        self.layer6 = nn.Linear(1000, 1000)
+        self.layer7 = nn.Linear(1000, 1000)
+        self.layer8 = nn.Linear(1000, 1)
 
         self.bn1 = nn.BatchNorm1d(1000)
         self.bn2 = nn.BatchNorm1d(1000)
         self.bn3 = nn.BatchNorm1d(1000)
+        self.bn4 = nn.BatchNorm1d(1000)
+        self.bn5 = nn.BatchNorm1d(1000)
+        self.bn6 = nn.BatchNorm1d(1000)
+        self.bn7 = nn.BatchNorm1d(1000)
 
     def forward(self, X):
         X = F.relu(self.bn1(self.layer1(X)))
         X = F.relu(self.bn2(self.layer2(X)))
         X = F.relu(self.bn3(self.layer3(X)))
-        y = self.layer4(X)
+        X = F.relu(self.bn4(self.layer4(X)))
+        X = F.relu(self.bn5(self.layer5(X)))
+        X = F.relu(self.bn6(self.layer6(X)))
+        X = F.relu(self.bn7(self.layer7(X)))
+        y = self.layer8(X)
 
         return y
 
@@ -226,6 +243,11 @@ class NaiveFNN(object):
             worker_init_fn=worker_init_fn
         )
 
+        data = iter(trainloader).next()
+
+        writer.add_graph(SXNet(), data[:, 1:])
+        writer.close()
+
         for idx, row in enumerate(trainloader):
             x = row[:, 1:]
             y = row[:, 0]
@@ -233,10 +255,14 @@ class NaiveFNN(object):
             print(x)
             print(y)
 
+            break
+
+        # plot_timings(trainloader, model_time=0.2, n_batches=4)
+
     def run(self):
-        self.train()
-        self.validate()
-        # self.test_dataloader()
+        # self.train()
+        # self.validate()
+        self.test_dataloader()
 
 
 def main():
