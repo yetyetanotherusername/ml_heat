@@ -17,10 +17,14 @@ from ml_heat.preprocessing.transform_data import DataTransformer
 
 
 dt = DataTransformer()
-writer = SummaryWriter(
-    os.path.join(
-        os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn',
-        'tensorboard'))
+
+tb_path = os.path.join(
+    os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn',
+    'tensorboard')
+
+if not os.path.exists(tb_path):
+    os.mkdir(tb_path)
+writer = SummaryWriter(tb_path)
 
 
 def worker_init_fn(worker_id):
@@ -260,9 +264,9 @@ class NaiveFNN(object):
         # plot_timings(trainloader, model_time=0.2, n_batches=4)
 
     def run(self):
-        # self.train()
-        # self.validate()
-        self.test_dataloader()
+        self.train()
+        self.validate()
+        # self.test_dataloader()
 
 
 def main():
