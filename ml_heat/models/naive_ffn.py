@@ -20,7 +20,7 @@ dt = DataTransformer()
 
 tb_path = os.path.join(
     os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn',
-    'tensorboard')
+    'tensorboard', os.pathsep())
 
 if not os.path.exists(tb_path):
     os.mkdir(tb_path)
