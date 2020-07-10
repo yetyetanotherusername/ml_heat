@@ -188,7 +188,7 @@ class NaiveFNN(object):
         sxnet.load_state_dict(torch.load(self.model_store, map_location=device))
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-        testdata = Data(os.path.join(self.store, 'trainset1'))
+        testdata = Data(os.path.join(self.store, 'testset'))
         testloader = DataLoader(
             testdata,
             batch_size=50000,
