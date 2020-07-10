@@ -20,7 +20,7 @@ dt = DataTransformer()
 
 tb_path = os.path.join(
     os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn',
-    'tensorboard', os.pathsep())
+    'tensorboard', os.pathsep)
 
 if not os.path.exists(tb_path):
     os.mkdir(tb_path)
@@ -100,7 +100,8 @@ class NaiveFNN(object):
     def __init__(self):
         self.store = dt.zarr_store
         self.model_store = os.path.join(
-            os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn')
+            os.getcwd(), 'ml_heat', '__data_store__', 'models', 'naive_ffn',
+            'naive_ffn')
 
         self.epochs = 2
         self.learning_rate = 0.01
@@ -180,11 +181,11 @@ class NaiveFNN(object):
     def validate(self):
         print('Starting Validation')
         use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda:0" if use_cuda else "cpu")
+        device = torch.device('cuda:0' if use_cuda else 'cpu')
 
         sxnet = SXNet()
         sxnet.to(device)
-        # sxnet.load_state_dict(torch.load(self.model_store))
+        sxnet.load_state_dict(torch.load(self.model_store, map_location=device))
         torch.multiprocessing.set_sharing_strategy('file_system')
 
         testdata = Data(os.path.join(self.store, 'trainset1'))
@@ -236,7 +237,7 @@ class NaiveFNN(object):
 
     def test_dataloader(self):
         traindata = Data(
-            self.store
+            os.path.join(self.store, 'origin')
         )
 
         trainloader = DataLoader(
