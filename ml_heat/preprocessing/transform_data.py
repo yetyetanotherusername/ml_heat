@@ -37,7 +37,7 @@ from ml_heat.helper import (
 def fnn_worker(feather_store,
                z_arr,
                animal_id,
-               shifts=range(288),
+               shifts=288,
                fix_imbalance=False):
 
     data = load_animal(feather_store, animal_id)
@@ -828,7 +828,7 @@ class DataTransformer(object):
                 self.feather_store,
                 z_arr,
                 animal_id,
-                fix_imbalance=True
+                fix_imbalance=False
             )
 
         # with ProcessPoolExecutor(os.cpu_count()) as process_pool:

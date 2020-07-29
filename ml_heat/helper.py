@@ -11,6 +11,8 @@ from cycler import cycler
 from matplotlib.patches import Rectangle
 from itertools import count, islice
 
+from scipy.linalg import hankel
+
 
 def plot_setup():
     plt.style.use('dark_background')
@@ -44,11 +46,17 @@ def store_animal(frame, store_path, animal_id):
     return animal_id
 
 
-def duplicate_shift(series, shifts, name=None):
-    n_cols = len(shifts)
-    frame = pd.concat([series] * n_cols, axis=1)
-    frame.columns = shifts
-    frame = frame.apply(lambda x: x.shift(int(x.name)))
+def duplicate_shift(series, shifts, name=None, save_memory=False):
+    if save_memory:
+        shifts = range(shifts)
+        n_cols = len(shifts)
+        frame = pd.concat([series] * n_cols, axis=1)
+        frame.columns = shifts
+        frame = frame.apply(lambda x: x.shift(int(x.name)))
+    else:
+        h = np.flipud(hankel(np.flip(series))[:, :shifts])
+        frame = pd.DataFrame(h, index=series.index).replace(0, np.nan)
+
     if name is not None:
         frame.columns = [f'{name}{column}' for column in frame.columns]
     return frame
