@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import time
+import numba
 
 from pyarrow.lib import ArrowInvalid
 
@@ -46,16 +47,25 @@ def store_animal(frame, store_path, animal_id):
     return animal_id
 
 
-def duplicate_shift(series, shifts, name=None, save_memory=False):
-    if save_memory:
-        shifts = range(shifts)
-        n_cols = len(shifts)
-        frame = pd.concat([series] * n_cols, axis=1)
-        frame.columns = shifts
-        frame = frame.apply(lambda x: x.shift(int(x.name)))
-    else:
-        h = np.flipud(hankel(np.flip(series))[:, :shifts])
-        frame = pd.DataFrame(h, index=series.index).replace(0, np.nan)
+@numba.jit(nopython=True)
+def _numba_duplicate_shift(in_array, shifts):
+    # allocate
+    arr_len = len(in_array)
+    out_array = np.empty((arr_len, shifts))
+    out_array[:] = np.nan
+
+    # populate
+    out_array[:, 0] = in_array
+    for idx in range(1, shifts):
+        column = in_array[:-idx]
+        out_array[idx:, idx] = column
+
+    return out_array
+
+
+def duplicate_shift(series, shifts, name=None):
+    m = _numba_duplicate_shift(series.values, shifts)
+    frame = pd.DataFrame(m, index=series.index)
 
     if name is not None:
         frame.columns = [f'{name}{column}' for column in frame.columns]

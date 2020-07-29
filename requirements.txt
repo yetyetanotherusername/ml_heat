@@ -23,3 +23,4 @@ sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
 sxutils @ git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
 dask[dataframe, diagnostics]
 dask-ml
+numba
