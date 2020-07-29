@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import torch
 import time
 
+from pyarrow.lib import ArrowInvalid
+
 from cycler import cycler
 from matplotlib.patches import Rectangle
 from itertools import count, islice
@@ -20,7 +22,12 @@ def plot_setup():
 
 
 def load_animal(path, animal_id, set_index=True):
-    frame = pd.read_feather(os.path.join(path, animal_id))
+    try:
+        frame = pd.read_feather(os.path.join(path, animal_id))
+    except ArrowInvalid as e:
+        print(e)
+        print(os.path.join(path, animal_id))
+        raise ArrowInvalid()
 
     if set_index is True:
         frame = frame.set_index(
