@@ -12,8 +12,6 @@ from cycler import cycler
 from matplotlib.patches import Rectangle
 from itertools import count, islice
 
-from scipy.linalg import hankel
-
 
 def plot_setup():
     plt.style.use('dark_background')
