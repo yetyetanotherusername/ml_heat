@@ -118,11 +118,18 @@ class NaiveFNN(object):
 
     def train(self):
         use_cuda = torch.cuda.is_available()
+
         device = torch.device("cuda:0" if use_cuda else "cpu")
         # torch.backends.cudnn.benchmark = True
 
         sxnet = SXNet()
         sxnet.to(device)
+        try:
+            sxnet.load_state_dict(
+                torch.load(self.model_store, map_location=device))
+        except Exception:
+            pass
+
         optimizer = optim.Adam(
             sxnet.parameters(),
             lr=self.learning_rate
@@ -214,10 +221,8 @@ class NaiveFNN(object):
                 y = batch[:, 0].unsqueeze(0).T
                 y_test_pred = torch.sigmoid(sxnet(x))
                 y_pred_tag = torch.round(y_test_pred)
-                y_pred_list.append(y_pred_tag.cpu().numpy())
-                y_list.append(y.numpy())
-        y_pred_list = np.concatenate([a.squeeze() for a in y_pred_list])
-        y_list = np.concatenate([a.squeeze() for a in y_list])
+                y_pred_list.append(y_pred_tag.cpu().numpy().flatten())
+                y_list.append(y.numpy().flatten())
 
         print('\n#####################################')
         print('Confusion Matrix')
