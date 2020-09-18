@@ -856,17 +856,17 @@ class DataTransformer(object):
             array,
             shuffle=True,
             test_size=0.3,
+            random_state=42
         )
 
         testset = dd.array.rechunk(testset, chunks=(50000, 290))
-        trainset = dd.array.rechunk(trainset, chunks=(50000, 290))
 
         testset.to_zarr(
             os.path.join(self.zarr_store, 'testset'),
             overwrite=True
         )
 
-        trainset = dd.array.random.permutation(trainset)
+        trainset = dd.array.rechunk(trainset, chunks=(50000, 290))
 
         trainset.to_zarr(
             os.path.join(self.zarr_store, 'trainset1'),
