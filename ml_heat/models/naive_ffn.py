@@ -3,7 +3,6 @@ import math
 import numpy as np
 from tqdm import tqdm
 import zarr
-from itertools import islice
 from sklearn.metrics import classification_report, confusion_matrix
 
 import torch
@@ -93,7 +92,7 @@ class Data(IterableDataset):
         self.end = end
 
     def __iter__(self):
-        return islice(self.array, self.start, self.end)
+        return self.array.islice(self.start, self.end)
 
 
 class NaiveFNN(object):

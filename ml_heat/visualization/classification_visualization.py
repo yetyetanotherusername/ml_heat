@@ -91,7 +91,7 @@ class ClassificationPlot(object):
         ymax, ymin = ax.get_ylim()
 
         ax.fill_between(
-            range(self.data_start, self.data_end), ymin, ymax,
+            range(0, self.data_end - self.data_start), ymin, ymax,
             where=self.y_pred_list,
             facecolor='r',
             alpha=0.5,
@@ -99,7 +99,7 @@ class ClassificationPlot(object):
         )
 
         ax.fill_between(
-            range(self.data_start, self.data_end), ymin, ymax,
+            range(0, self.data_end - self.data_start), ymin, ymax,
             where=self.y_list,
             facecolor='g',
             alpha=0.5,
