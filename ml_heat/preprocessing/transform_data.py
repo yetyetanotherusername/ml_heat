@@ -556,7 +556,7 @@ def transform_organisation(organisation_id, readpath, temp_path):
 
         subframe = frame.loc[
             (group, slice(None), slice(None)), slice(None)]
-        reslist.append(add_group_feature(subframe))
+        reslist.append(add_group_feature(subframe.copy()))
 
     del frame
     frame = pd.concat(reslist, sort=False)
