@@ -20,7 +20,7 @@ cattledb
 sxapi @ git+https://github.com/smaxtec/sxapi.git@SX-2674-internapi-v2#egg=sxapi
 -e git+ssh://git@bitbucket.org/smaxtec/anthilldb.git#egg=anthilldb
 sxutils @ git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
--e git+https://github.com/yetyetanotherusername/zarr-python.git#egg=zarr
+-e git+https://github.com/yetyetanotherusername/zarr-python.git@start-stop-for-iterator#egg=zarr
 dask[dataframe, diagnostics]
 dask-ml
 numba
