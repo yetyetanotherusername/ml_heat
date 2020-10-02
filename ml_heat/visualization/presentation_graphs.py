@@ -200,7 +200,7 @@ def plot_activity():
     plt.savefig(os.path.join(savepath, 'act_micro.pdf'),
                 dpi=None, facecolor='w', edgecolor='w',
                 orientation='portrait', format=None, transparent=False,
-                bbox_inches=None, pad_inches=0.1, metadata=None)
+                bbox_inches='tight', pad_inches=0.1, metadata=None)
 
 
 def plot_temp():
@@ -266,7 +266,7 @@ def plot_temp():
     plt.savefig(os.path.join(savepath, 'temp_micro.pdf'),
                 dpi=None, facecolor='w', edgecolor='w',
                 orientation='portrait', format=None, transparent=False,
-                bbox_inches=None, pad_inches=0.1, metadata=None)
+                bbox_inches='tight', pad_inches=0.1, metadata=None)
 
 
 def main():
