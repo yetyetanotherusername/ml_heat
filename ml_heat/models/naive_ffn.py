@@ -119,7 +119,10 @@ class NaiveFNN(object):
         use_cuda = torch.cuda.is_available()
 
         device = torch.device("cuda:0" if use_cuda else "cpu")
-        # torch.backends.cudnn.benchmark = True
+
+        if use_cuda:
+            torch.backends.cudnn.enabled = True
+            torch.backends.cudnn.benchmark = True
 
         sxnet = SXNet()
         sxnet.to(device)
@@ -188,6 +191,10 @@ class NaiveFNN(object):
         print('Starting Validation')
         use_cuda = torch.cuda.is_available()
         device = torch.device('cuda:0' if use_cuda else 'cpu')
+
+        if use_cuda:
+            torch.backends.cudnn.enabled = True
+            torch.backends.cudnn.benchmark = True
 
         sxnet = SXNet()
         sxnet.to(device)
