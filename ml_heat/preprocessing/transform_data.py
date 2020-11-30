@@ -45,16 +45,37 @@ def fnn_worker(feather_store,
     data['annotation'] = np.logical_or(
         np.logical_or(data.pregnant, data.cyclic), data.inseminated)
 
-    data = data[['annotation', 'DIM', 'heat_feature']].dropna()
+    data = data[[
+        'annotation',
+        'DIM',
+        'act',
+        'act_group_mean',
+        'temp_filtered']].dropna()
 
     data.DIM = pd.to_numeric(data.DIM, downcast='float')
     data.annotation = pd.to_numeric(
         data.annotation.astype(int), downcast='float')
-    data.heat_feature = pd.to_numeric(data.heat_feature, downcast='float')
+    data.act = pd.to_numeric(data.act, downcast='float')
+    data.act_group_mean = pd.to_numeric(data.act_group_mean, downcast='float')
+    data.temp_filtered = pd.to_numeric(data.temp_filtered, downcast='float')
 
-    heat_shift = duplicate_shift(data.heat_feature, shifts, 'heat_feature')
-    data = pd.concat([data, heat_shift], axis=1).dropna()
-    data = data.drop(['heat_feature'], axis=1)
+    DIM_shift = duplicate_shift(data.DIM, shifts, 'DIM_shift')
+    act_shift = duplicate_shift(data.act, shifts, 'act_shift')
+    group_shift = duplicate_shift(data.act_group_mean, shifts, 'group_shift')
+    temp_shift = duplicate_shift(data.temp_filtered, shifts, 'temp_shift')
+
+    data = pd.concat([
+        data,
+        DIM_shift,
+        act_shift,
+        group_shift,
+        temp_shift], axis=1).dropna()
+
+    data = data.drop([
+        'DIM',
+        'act',
+        'act_group_mean',
+        'temp_filtered'], axis=1)
 
     if fix_imbalance:
         no_heat_idx = data[data.annotation == 0].index
@@ -64,7 +85,15 @@ def fnn_worker(feather_store,
         to_drop = np.random.choice(no_heat_idx, overhang, replace=False)
         data = data[~data.index.isin(to_drop)]
 
-    z_arr.append(data.values)
+    arr = np.zeros((data.shape[0], 288, 5))
+
+    arr[:, 0, 0] = data.annotation.values
+    arr[:, :, 1] = data.loc[:, data.columns.str.contains('DIM_shift')].values
+    arr[:, :, 2] = data.loc[:, data.columns.str.contains('act_shift')].values
+    arr[:, :, 3] = data.loc[:, data.columns.str.contains('group_shift')].values
+    arr[:, :, 4] = data.loc[:, data.columns.str.contains('temp_shift')].values
+
+    z_arr.append(arr)
     os.remove(os.path.join(feather_store, animal_id))
     return animal_id
 
@@ -805,12 +834,17 @@ class DataTransformer(object):
     def store_to_zarr(self):
         store = zarr.DirectoryStore(self.zarr_store)
         group = zarr.hierarchy.group(store=store)
-        z_arr = group.require_dataset(
-            'origin',
-            shape=(0, 290),
-            chunks=(50000, None),
-            dtype='f4'
-        )
+        try:
+            z_arr = group.require_dataset(
+                'origin',
+                shape=(0, 288, 5),
+                chunks=(50000, None, None),
+                dtype='f4'
+            )
+        except TypeError:
+            z_arr = group['origin']
+        except Exception as e:
+            raise e
 
         animal_ids = os.listdir(self.feather_store)
 
