@@ -231,8 +231,8 @@ class ResNet(object):
             epoch_acc = 0
             epoch_len = 0
             for batch in tqdm(trainloader, **params):
-                x = batch[:, 1:].to(device)
-                y = batch[:, 0].unsqueeze(0).T.to(device)
+                x = batch[:, :, 1:].to(device)
+                y = batch[:, 0, 0].unsqueeze(0).T.to(device)
 
                 optimizer.zero_grad()
 
