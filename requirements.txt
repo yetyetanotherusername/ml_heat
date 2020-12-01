@@ -24,3 +24,4 @@ sxutils @ git+https://bitbucket.org/smaxtec/sxutils#egg=sxutils
 dask[dataframe, diagnostics]
 dask-ml
 numba
+tensorboard

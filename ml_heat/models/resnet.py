@@ -45,57 +45,59 @@ def worker_init_fn(worker_id):
 class ReSXNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.n_features = 289
+        self.size = 64
+        self.input_shape = (288, 4)
         # block 1 ##################################################
         # layer1
-        self.bn_input = nn.BatchNorm1d(self.n_features)
-        self.layer1_1 = nn.Conv2d(self.n_features, self.n_features, 8)
-        self.bn1_1 = nn.BatchNorm1d(self.n_features)
+        self.bn_input = nn.BatchNorm1d(self.input_shape[0])
+        self.layer1_1 = nn.Conv2d(self.input_shape[0], self.size, 8, padding=1)
+        self.bn1_1 = nn.BatchNorm2d(self.size)
 
         # layer 2
-        self.layer1_2 = nn.Conv2d(self.n_features, self.n_features, 5)
-        self.bn1_2 = nn.BatchNorm1d(self.n_features)
+        self.layer1_2 = nn.Conv2d(self.size, self.size, 5, padding=1)
+        self.bn1_2 = nn.BatchNorm2d(self.size)
 
         # layer 3
-        self.layer1_3 = nn.Conv2d(self.n_features, self.n_features, 3)
-        self.bn1_3 = nn.BatchNorm1d(self.n_features)
+        self.layer1_3 = nn.Conv2d(self.size, self.size, 3, padding=1)
+        self.bn1_3 = nn.BatchNorm2d(self.size)
 
-        self.bypass1 = nn.BatchNorm1d(self.n_features)
+        self.bypass1 = nn.BatchNorm2d(self.size)
+        self.bypass_conv1 = nn.Conv2d(self.input_shape[0], self.size, 1, padding=1)
 
         # block 2 ##################################################
         # layer1
-        self.layer2_1 = nn.Conv2d(self.n_features, 2 * self.n_features, 8)
-        self.bn2_1 = nn.BatchNorm1d(2 * self.n_features)
+        self.layer2_1 = nn.Conv2d(self.size, 2 * self.size, 8, padding=1)
+        self.bn2_1 = nn.BatchNorm2d(2 * self.size)
 
         # layer 2
-        self.layer2_2 = nn.Conv2d(2 * self.n_features, 2 * self.n_features, 5)
-        self.bn2_2 = nn.BatchNorm1d(2 * self.n_features)
+        self.layer2_2 = nn.Conv2d(2 * self.size, 2 * self.size, 5, padding=1)
+        self.bn2_2 = nn.BatchNorm2d(2 * self.size)
 
         # layer 3
-        self.layer2_3 = nn.Conv2d(2 * self.n_features, 2 * self.n_features, 3)
-        self.bn2_3 = nn.BatchNorm1d(2 * self.n_features)
+        self.layer2_3 = nn.Conv2d(2 * self.size, 2 * self.size, 3, padding=1)
+        self.bn2_3 = nn.BatchNorm2d(2 * self.size)
 
-        self.bypass2 = nn.BatchNorm1d(2 * self.n_features)
-        self.bypass_conv2 = nn.Conv2d(self.n_features, 2 * self.n_features, 1)
+        self.bypass2 = nn.BatchNorm2d(2 * self.size)
+        self.bypass_conv2 = nn.Conv2d(self.size, 2 * self.size, 1, padding=1)
 
         # block 3 ##################################################
         # layer1
-        self.layer3_1 = nn.Conv2d(2 * self.n_features, 2 * self.n_features, 8)
-        self.bn3_1 = nn.BatchNorm1d(2 * self.n_features)
+        self.layer3_1 = nn.Conv2d(2 * self.size, 2 * self.size, 8, padding=1)
+        self.bn3_1 = nn.BatchNorm2d(2 * self.size)
 
         # layer 2
-        self.layer3_2 = nn.Conv2d(2 * self.n_features, 2 * self.n_features, 5)
-        self.bn3_2 = nn.BatchNorm1d(2 * self.n_features)
+        self.layer3_2 = nn.Conv2d(2 * self.size, 2 * self.size, 5, padding=1)
+        self.bn3_2 = nn.BatchNorm2d(2 * self.size)
 
         # layer 3
-        self.layer3_3 = nn.Conv2d(2 * self.n_features, 2 * self.n_features, 3)
-        self.bn3_3 = nn.BatchNorm1d(2 * self.n_features)
+        self.layer3_3 = nn.Conv2d(2 * self.size, 2 * self.size, 3, padding=1)
+        self.bn3_3 = nn.BatchNorm2d(2 * self.size)
 
-        self.bypass3 = nn.BatchNorm1d(2 * self.n_features)
+        self.bypass3 = nn.BatchNorm2d(2 * self.size)
 
         # output layers ############################################
-        self.pool = nn.AvgPool2d(2 * self.n_features)
-        self.out = nn.Linear(2 * self.n_features, 1)
+        self.pool = nn.AvgPool2d(2 * self.size)
+        self.out = nn.Linear(2 * self.size, 1)
         self.softmax = nn.Softmax()
 
     def forward(self, X):
@@ -110,7 +112,7 @@ class ReSXNet(nn.Module):
         Y = self.bn1_3(self.layer1_3(Y))
 
         # bypass
-        X = F.relu(Y.add(self.bypass1(X)))
+        X = F.relu(Y.add(self.bypass1(self.bypass_conv1(X))))
 
         # block 2 ##################################################
         # layer 1
@@ -172,7 +174,7 @@ class ResNet(object):
             'resnet')
 
         self.epochs = 2
-        self.learning_rate = 0.01
+        self.learning_rate = 0.001
         self.momentum = 0.9
 
     def binary_acc(self, y_pred, y_test):

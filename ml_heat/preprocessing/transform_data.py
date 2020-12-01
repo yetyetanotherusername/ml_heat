@@ -886,21 +886,22 @@ class DataTransformer(object):
         array = dd.array.from_zarr(
             os.path.join(self.zarr_store, 'origin'))
 
-        trainset, testset = train_test_split(
-            array,
-            shuffle=True,
-            test_size=0.3,
-            random_state=42
-        )
+        array = dd.array.random.permutation(array)
 
-        testset = dd.array.rechunk(testset, chunks=(50000, 290))
+        test_size = 0.3
+        samples = array.shape[0]
+        split_index = int(samples * test_size)
+
+        testset = array[:split_index, :, :]
+        testset = dd.array.random.permutation(testset).rechunk(chunks=(50000, 288, 5))
 
         testset.to_zarr(
             os.path.join(self.zarr_store, 'testset'),
             overwrite=True
         )
 
-        trainset = dd.array.rechunk(trainset, chunks=(50000, 290))
+        trainset = array[split_index:, :, :]
+        trainset = dd.array.random.permutation(trainset).rechunk(chunks=(50000, 288, 5))
 
         trainset.to_zarr(
             os.path.join(self.zarr_store, 'trainset1'),
