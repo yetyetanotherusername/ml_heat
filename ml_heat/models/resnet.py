@@ -1,5 +1,6 @@
 import os
 import math
+import numpy as np
 
 from tqdm import tqdm
 import zarr
@@ -50,55 +51,55 @@ class ReSXNet(nn.Module):
         # block 1 ##################################################
         # layer1
         self.bn_input = nn.BatchNorm1d(self.input_shape[0])
-        self.layer1_1 = nn.Conv2d(self.input_shape[0], self.size, 8, padding=1)
-        self.bn1_1 = nn.BatchNorm2d(self.size)
+        self.layer1_1 = nn.Conv1d(self.input_shape[0], self.size, 7, padding=3)
+        self.bn1_1 = nn.BatchNorm1d(self.size)
 
         # layer 2
-        self.layer1_2 = nn.Conv2d(self.size, self.size, 5, padding=1)
-        self.bn1_2 = nn.BatchNorm2d(self.size)
+        self.layer1_2 = nn.Conv1d(self.size, self.size, 5, padding=2)
+        self.bn1_2 = nn.BatchNorm1d(self.size)
 
         # layer 3
-        self.layer1_3 = nn.Conv2d(self.size, self.size, 3, padding=1)
-        self.bn1_3 = nn.BatchNorm2d(self.size)
+        self.layer1_3 = nn.Conv1d(self.size, self.size, 3, padding=1)
+        self.bn1_3 = nn.BatchNorm1d(self.size)
 
-        self.bypass1 = nn.BatchNorm2d(self.size)
-        self.bypass_conv1 = nn.Conv2d(self.input_shape[0], self.size, 1, padding=1)
+        self.bypass_conv1 = nn.Conv1d(self.input_shape[0], self.size, 1, padding=0)
+        self.bypass1 = nn.BatchNorm1d(self.size)
 
         # block 2 ##################################################
         # layer1
-        self.layer2_1 = nn.Conv2d(self.size, 2 * self.size, 8, padding=1)
-        self.bn2_1 = nn.BatchNorm2d(2 * self.size)
+        self.layer2_1 = nn.Conv1d(self.size, 2 * self.size, 7, padding=3)
+        self.bn2_1 = nn.BatchNorm1d(2 * self.size)
 
         # layer 2
-        self.layer2_2 = nn.Conv2d(2 * self.size, 2 * self.size, 5, padding=1)
-        self.bn2_2 = nn.BatchNorm2d(2 * self.size)
+        self.layer2_2 = nn.Conv1d(2 * self.size, 2 * self.size, 5, padding=2)
+        self.bn2_2 = nn.BatchNorm1d(2 * self.size)
 
         # layer 3
-        self.layer2_3 = nn.Conv2d(2 * self.size, 2 * self.size, 3, padding=1)
-        self.bn2_3 = nn.BatchNorm2d(2 * self.size)
+        self.layer2_3 = nn.Conv1d(2 * self.size, 2 * self.size, 3, padding=1)
+        self.bn2_3 = nn.BatchNorm1d(2 * self.size)
 
-        self.bypass2 = nn.BatchNorm2d(2 * self.size)
-        self.bypass_conv2 = nn.Conv2d(self.size, 2 * self.size, 1, padding=1)
+        self.bypass2 = nn.BatchNorm1d(2 * self.size)
+        self.bypass_conv2 = nn.Conv1d(self.size, 2 * self.size, 1, padding=0)
 
         # block 3 ##################################################
         # layer1
-        self.layer3_1 = nn.Conv2d(2 * self.size, 2 * self.size, 8, padding=1)
-        self.bn3_1 = nn.BatchNorm2d(2 * self.size)
+        self.layer3_1 = nn.Conv1d(2 * self.size, 2 * self.size, 7, padding=3)
+        self.bn3_1 = nn.BatchNorm1d(2 * self.size)
 
         # layer 2
-        self.layer3_2 = nn.Conv2d(2 * self.size, 2 * self.size, 5, padding=1)
-        self.bn3_2 = nn.BatchNorm2d(2 * self.size)
+        self.layer3_2 = nn.Conv1d(2 * self.size, 2 * self.size, 5, padding=2)
+        self.bn3_2 = nn.BatchNorm1d(2 * self.size)
 
         # layer 3
-        self.layer3_3 = nn.Conv2d(2 * self.size, 2 * self.size, 3, padding=1)
-        self.bn3_3 = nn.BatchNorm2d(2 * self.size)
+        self.layer3_3 = nn.Conv1d(2 * self.size, 2 * self.size, 3, padding=1)
+        self.bn3_3 = nn.BatchNorm1d(2 * self.size)
 
-        self.bypass3 = nn.BatchNorm2d(2 * self.size)
+        self.bypass3 = nn.BatchNorm1d(2 * self.size)
 
         # output layers ############################################
-        self.pool = nn.AvgPool2d(2 * self.size)
+        self.pool = nn.AdaptiveAvgPool1d(1)
         self.out = nn.Linear(2 * self.size, 1)
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(1)
 
     def forward(self, X):
         # block 1 ##################################################
@@ -140,8 +141,20 @@ class ReSXNet(nn.Module):
         # bypass
         Y = F.relu(Y.add(self.bypass3(X)))
 
+
         # output layers ############################################
-        y = self.softmax(self.out(self.pool(Y)))
+        # Y = self.pool(Y).reshape((Y.shape[0], Y.shape[1]))
+        # print(Y.shape)
+        # Y = self.out(Y)
+        # Y = self.softmax(Y)
+        # y = Y
+        y = self.softmax(
+            self.out(
+                self.pool(Y).reshape(
+                    (Y.shape[0], Y.shape[1])
+                )
+            )
+        )
 
         return y
 
@@ -234,12 +247,12 @@ class ResNet(object):
             epoch_len = 0
             for batch in tqdm(trainloader, **params):
                 x = batch[:, :, 1:].to(device)
-                y = batch[:, 0, 0].unsqueeze(0).T.to(device)
+                y = batch[:, 0, 0].to(device)
 
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
-                y_pred = sxnet(x)
+                y_pred = sxnet(x).reshape(y.shape)
                 loss = criterion(y_pred, y)
                 acc = self.binary_acc(y_pred, y)
 
@@ -248,7 +261,7 @@ class ResNet(object):
 
                 epoch_loss += loss.item()
                 epoch_acc += acc.item()
-                epoch_len += y.shape[1]
+                epoch_len += y.shape[0]
 
             print(f'Epoch {e+0:03}: | '
                   f'Loss: {epoch_loss/epoch_len:.5f} | '
@@ -295,12 +308,15 @@ class ResNet(object):
 
         with torch.no_grad():
             for batch in tqdm(testloader, **params):
-                x = batch[:, 1:].to(device)
-                y = batch[:, 0].unsqueeze(0).T
-                y_test_pred = sxnet(x)
+                x = batch[:, :, 1:].to(device)
+                y = batch[:, 0, 0]
+                y_test_pred = sxnet(x).reshape(y.shape)
                 y_pred_tag = torch.round(y_test_pred)
                 y_pred_list.append(y_pred_tag.cpu().numpy().flatten())
                 y_list.append(y.numpy().flatten())
+
+        y_pred_list = np.concatenate(y_pred_list)
+        y_list = np.concatenate(y_list)
 
         print('\n#####################################')
         print('Confusion Matrix')
@@ -348,7 +364,7 @@ class ResNet(object):
         # plot_timings(trainloader, model_time=0.2, n_batches=4)
 
     def run(self):
-        self.train()
+        # self.train()
         self.validate()
         # self.test_dataloader()
 

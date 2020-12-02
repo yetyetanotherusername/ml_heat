@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from ml_heat.helper import plot_setup
 
 savepath = os.path.join('ml_heat', 'visualization', 'plots')

@@ -260,7 +260,7 @@ def plot_temp():
         label='deleted heats'
     )
 
-    axis.set_aspect(0.2)
+    axis.set_aspect(0.3)
 
     # plt.tight_layout()
     plt.savefig(os.path.join(savepath, 'temp_micro.pdf'),

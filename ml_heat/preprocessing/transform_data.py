@@ -1104,9 +1104,9 @@ class DataTransformer(object):
         plt.show()
 
     def run(self):
-        self.clear_data()
-        self.arrange_data()
-        self.normalize_numeric_cols()
+        # self.clear_data()
+        # self.arrange_data()
+        # self.normalize_numeric_cols()
         self.store_to_zarr()
         # self.validation_split()
         # self.test()
@@ -1116,8 +1116,8 @@ class DataTransformer(object):
 
 
 def main():
-    transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
-    # transformer = DataTransformer()
+    # transformer = DataTransformer(['59e7515edb84e482acce8339'], update=True)
+    transformer = DataTransformer()
     transformer.run()
 
 
