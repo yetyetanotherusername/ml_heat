@@ -10,10 +10,6 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import multiprocessing
-import dask as dd
-
-from dask.diagnostics import ProgressBar
-from dask_ml.model_selection import train_test_split
 
 from concurrent.futures import (
     ProcessPoolExecutor,
@@ -21,6 +17,7 @@ from concurrent.futures import (
 )
 
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 
 from sxutils.models.animal.cycle import AnimalLifecycle
 from sxutils.munch.cyclemunch import cycle_munchify
@@ -29,42 +26,39 @@ from ml_heat.preprocessing.animal_serde import AnimalSchemaV2
 from ml_heat.helper import (
     plot_setup,
     load_animal,
-    store_animal,
-    duplicate_shift
+    store_animal
 )
 
 
-def fnn_worker(feather_store,
-               z_arr,
-               animal_id,
-               shifts=288,
-               fix_imbalance=False):
-
+def fnn_worker(feather_store, group, animal_id):
     data = load_animal(feather_store, animal_id)
-
     data['annotation'] = np.logical_or(
         np.logical_or(data.pregnant, data.cyclic), data.inseminated)
 
-    data = data[['annotation', 'DIM', 'heat_feature']].dropna()
+    data = data[[
+        'annotation',
+        'DIM',
+        'act',
+        'act_group_mean',
+        'temp_filtered'
+    ]].dropna()
 
     data.DIM = pd.to_numeric(data.DIM, downcast='float')
     data.annotation = pd.to_numeric(
         data.annotation.astype(int), downcast='float')
-    data.heat_feature = pd.to_numeric(data.heat_feature, downcast='float')
+    data.act = pd.to_numeric(data.act, downcast='float')
+    data.act_group_mean = pd.to_numeric(data.act_group_mean, downcast='float')
+    data.temp_filtered = pd.to_numeric(data.temp_filtered, downcast='float')
 
-    heat_shift = duplicate_shift(data.heat_feature, shifts, 'heat_feature')
-    data = pd.concat([data, heat_shift], axis=1).dropna()
-    data = data.drop(['heat_feature'], axis=1)
+    group.create_dataset(
+        animal_id,
+        shape=data.values.shape,
+        dtype='f4',
+        chunks=data.values.shape,
+        overwrite=True
+    )
 
-    if fix_imbalance:
-        no_heat_idx = data[data.annotation == 0].index
-        no_heat_len = len(no_heat_idx)
-        heat_len = data[data.annotation == 1].shape[0]
-        overhang = no_heat_len - heat_len
-        to_drop = np.random.choice(no_heat_idx, overhang, replace=False)
-        data = data[~data.index.isin(to_drop)]
-
-    z_arr.append(data.values)
+    group[animal_id][:, :] = data.values
     os.remove(os.path.join(feather_store, animal_id))
     return animal_id
 
@@ -803,16 +797,23 @@ class DataTransformer(object):
         return None
 
     def store_to_zarr(self):
+        animal_ids = os.listdir(self.feather_store)
+
         store = zarr.DirectoryStore(self.zarr_store)
         group = zarr.hierarchy.group(store=store)
-        z_arr = group.require_dataset(
-            'origin',
-            shape=(0, 290),
-            chunks=(50000, None),
-            dtype='f4'
-        )
 
-        animal_ids = os.listdir(self.feather_store)
+        try:
+            animal_ids_stored = group.require_dataset(
+                'animal_ids',
+                shape=(0),
+                dtype='U24'
+            )
+        except TypeError:
+            animal_ids_stored = group['animal_ids']
+
+        animal_ids = list(set(animal_ids + list(animal_ids_stored)))
+        animal_ids_stored.resize(len(animal_ids))
+        animal_ids_stored[:] = animal_ids
 
         kwargs = {
             'total': len(animal_ids),
@@ -823,71 +824,55 @@ class DataTransformer(object):
             'smoothing': 0.01
         }
 
-        for animal_id in tqdm(animal_ids, **kwargs):
-            fnn_worker(
-                self.feather_store,
-                z_arr,
-                animal_id,
-                fix_imbalance=False
-            )
+        # for animal_id in tqdm(animal_ids, **kwargs):
+        #     fnn_worker(
+        #         self.feather_store,
+        #         group,
+        #         animal_id
+        #     )
 
-        # with ProcessPoolExecutor(os.cpu_count()) as process_pool:
-        #     results = [
-        #         process_pool.submit(
-        #             fnn_worker,
-        #             self.feather_store,
-        #             z_arr,
-        #             animal_id
-        #         ) for animal_id in animal_ids]
+        with ProcessPoolExecutor(os.cpu_count()) as process_pool:
+            results = [
+                process_pool.submit(
+                    fnn_worker,
+                    self.feather_store,
+                    group,
+                    animal_id
+                ) for animal_id in animal_ids]
 
-        #     for f in tqdm(as_completed(results), **kwargs):
-        #         pass
+            for f in tqdm(as_completed(results), **kwargs):
+                pass
 
         return None
 
     def validation_split(self):
-        pbar = ProgressBar()
-        pbar.register()
+        store = zarr.DirectoryStore(self.zarr_store)
+        group = zarr.hierarchy.group(store=store)
 
-        array = dd.array.from_zarr(
-            os.path.join(self.zarr_store, 'origin'))
+        animal_ids = group['animal_ids'][:]
 
         trainset, testset = train_test_split(
-            array,
-            shuffle=True,
-            test_size=0.3,
+            animal_ids,
+            test_size=0.33,
             random_state=42
         )
 
-        testset = dd.array.rechunk(testset, chunks=(50000, 290))
-
-        testset.to_zarr(
-            os.path.join(self.zarr_store, 'testset'),
+        group.create_dataset(
+            'train_keys',
+            shape=(len(trainset)),
+            dtype='U24',
             overwrite=True
         )
 
-        trainset = dd.array.rechunk(trainset, chunks=(50000, 290))
-
-        trainset.to_zarr(
-            os.path.join(self.zarr_store, 'trainset1'),
+        group.create_dataset(
+            'test_keys',
+            shape=(len(testset)),
+            dtype='U24',
             overwrite=True
         )
 
-        # trainset = dd.array.random.permutation(trainset)
-
-        # trainset.to_zarr(
-        #     os.path.join(self.zarr_store, 'trainset2'),
-        #     overwrite=True
-        # )
-
-        # trainset = dd.array.random.permutation(trainset)
-
-        # trainset.to_zarr(
-        #     os.path.join(self.zarr_store, 'trainset3'),
-        #     overwrite=True
-        # )
-
-        pbar.unregister()
+        group['train_keys'] = trainset
+        group['test_keys'] = testset
 
     def test(self):
         plt = plot_setup()
