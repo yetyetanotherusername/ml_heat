@@ -127,8 +127,8 @@ class LSTM(object):
                 optimizer.zero_grad()
 
                 sxnet.state = (
-                    torch.zeros(1, 1, sxnet.h_size),
-                    torch.zeros(1, 1, sxnet.h_size))
+                    torch.zeros(1, 1, sxnet.h_size).to(device),
+                    torch.zeros(1, 1, sxnet.h_size).to(device))
 
                 # forward + backward + optimize
                 y_pred = sxnet(x).reshape(y.shape)
@@ -202,6 +202,9 @@ class LSTM(object):
             for batch in tqdm(testloader, **params):
                 x = batch[:, :, 1:].to(device)
                 y_label = batch[:, :, 0]
+                sxnet.state = (
+                    torch.zeros(1, 1, sxnet.h_size).to(device),
+                    torch.zeros(1, 1, sxnet.h_size).to(device))
                 y = torch.sigmoid(sxnet(x)).reshape(y_label.shape)
                 y = torch.round(y)
                 y_list.extend(y.cpu().flatten().tolist())
