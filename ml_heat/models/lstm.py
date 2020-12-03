@@ -204,11 +204,8 @@ class LSTM(object):
                 y_label = batch[:, :, 0]
                 y = torch.sigmoid(sxnet(x)).reshape(y_label.shape)
                 y = torch.round(y)
-                y_list.append(y.cpu().numpy().flatten())
-                y_label_list.append(y_label.numpy().flatten())
-
-        y_list = np.concatenate(y_list)
-        y_label_list = np.concatenate(y_label_list)
+                y_list.extend(y.cpu().flatten().tolist())
+                y_label_list.extend(y_label.flatten().tolist())
 
         print('\n#####################################')
         print('Confusion Matrix')
