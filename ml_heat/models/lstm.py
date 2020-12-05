@@ -1,7 +1,6 @@
 import os
 import zarr
 from tqdm import tqdm
-import numpy as np
 
 from sklearn.metrics import classification_report, confusion_matrix
 
@@ -18,22 +17,32 @@ dt = DataTransformer()
 
 
 class SXlstm(nn.Module):
-    def __init__(self, input_size=4, h_size=100, layers=1, out_size=1):
+    def __init__(self, device, input_size=4, h_size=100, layers=1, out_size=1):
         super().__init__()
 
         self.h_size = h_size
+
+        self.device = device
 
         self.lstm = nn.LSTM(
             input_size=input_size,
             hidden_size=h_size,
             num_layers=layers,
             batch_first=True
+        ).to(device)
+
+        self.linear = nn.Linear(h_size, out_size).to(device)
+        self.state = (
+            torch.zeros(1, 1, h_size).to(device),
+            torch.zeros(1, 1, h_size).to(device)
         )
 
-        self.linear = nn.Linear(h_size, out_size)
-        self.state = (torch.zeros(1, 1, h_size), torch.zeros(1, 1, h_size))
-
     def forward(self, X):
+        self.state = (
+            torch.zeros(1, 1, self.h_size).to(self.device),
+            torch.zeros(1, 1, self.h_size).to(self.device)
+        )
+
         Y, self.state = self.lstm(X, self.state)
         return self.linear(Y)
 
@@ -82,8 +91,7 @@ class LSTM(object):
             torch.backends.cudnn.enabled = True
             torch.backends.cudnn.benchmark = True
 
-        sxnet = SXlstm()
-        sxnet.to(device)
+        sxnet = SXlstm(device)
         try:
             sxnet.load_state_dict(
                 torch.load(self.model_path, map_location=device))
@@ -95,8 +103,8 @@ class LSTM(object):
             lr=self.learning_rate
         )
 
-        criterion = nn.BCEWithLogitsLoss()
-        # pos_weight=torch.FloatTensor([250.]).to(device))
+        criterion = nn.BCEWithLogitsLoss(
+            pos_weight=torch.FloatTensor([100.]).to(device))
 
         traindata = Data(self.store, 'train_keys')
         trainloader = DataLoader(
@@ -125,10 +133,6 @@ class LSTM(object):
                 y = batch[:, :, 0].to(device)
 
                 optimizer.zero_grad()
-
-                sxnet.state = (
-                    torch.zeros(1, 1, sxnet.h_size).to(device),
-                    torch.zeros(1, 1, sxnet.h_size).to(device))
 
                 # forward + backward + optimize
                 y_pred = sxnet(x).reshape(y.shape)
@@ -170,8 +174,7 @@ class LSTM(object):
             torch.backends.cudnn.enabled = True
             torch.backends.cudnn.benchmark = True
 
-        sxnet = SXlstm()
-        sxnet.to(device)
+        sxnet = SXlstm(device)
         try:
             sxnet.load_state_dict(torch.load(
                 self.model_path, map_location=device))
@@ -202,9 +205,7 @@ class LSTM(object):
             for batch in tqdm(testloader, **params):
                 x = batch[:, :, 1:].to(device)
                 y_label = batch[:, :, 0]
-                sxnet.state = (
-                    torch.zeros(1, 1, sxnet.h_size).to(device),
-                    torch.zeros(1, 1, sxnet.h_size).to(device))
+
                 y = torch.sigmoid(sxnet(x)).reshape(y_label.shape)
                 y = torch.round(y)
                 y_list.extend(y.cpu().flatten().tolist())
