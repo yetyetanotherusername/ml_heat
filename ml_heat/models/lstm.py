@@ -109,7 +109,7 @@ class LSTM(object):
         self.epochs = 10
         self.learning_rate = 0.001
         self.momentum = 0.9
-        self.batch_size = 50
+        self.batch_size = 10
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -130,7 +130,6 @@ class LSTM(object):
 
     def train(self):
         use_cuda = torch.cuda.is_available()
-
         device = torch.device("cuda:0" if use_cuda else "cpu")
 
         if use_cuda:
@@ -177,7 +176,6 @@ class LSTM(object):
             epoch_len = 0
             for batch, lengths in tqdm(trainloader, **params):
                 batch = batch.to(device)
-                lengths = lengths.to(device)
 
                 x = batch[:, :, 1:]
                 y = batch[:, :, 0]
@@ -259,7 +257,6 @@ class LSTM(object):
         with torch.no_grad():
             for batch, lengths in tqdm(testloader, **params):
                 batch = batch.to(device)
-                lengths = lengths.to(device)
 
                 x = batch[:, :, 1:]
                 y = batch[:, :, 0]
