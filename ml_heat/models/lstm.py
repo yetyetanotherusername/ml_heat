@@ -1,6 +1,7 @@
 import os
 import zarr
 from tqdm import tqdm
+import math
 
 from sklearn.metrics import classification_report, confusion_matrix
 
@@ -104,7 +105,9 @@ class LSTM(object):
         self.store = dt.zarr_store
         self.model_store = os.path.join(
             os.getcwd(), 'ml_heat', '__data_store__', 'models', 'lstm')
-        self.model_path = os.path.join(self.model_store, 'lstm')
+        self.model_path = os.path.join(self.model_store, 'lstm1')
+
+        self.device = 'cuda:0'
 
         self.epochs = 10
         self.learning_rate = 0.001
@@ -130,7 +133,7 @@ class LSTM(object):
 
     def train(self):
         use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda:0" if use_cuda else "cpu")
+        device = torch.device(self.device if use_cuda else "cpu")
 
         if use_cuda:
             torch.backends.cudnn.enabled = True
@@ -164,7 +167,7 @@ class LSTM(object):
         params = {
             'desc': 'epoch progress',
             'smoothing': 0.01,
-            'total': len(traindata) // self.batch_size
+            'total': math.ceil(len(traindata) / self.batch_size)
         }
 
         losses = []
@@ -218,7 +221,7 @@ class LSTM(object):
     def validate(self):
         print('Starting Validation')
         use_cuda = torch.cuda.is_available()
-        device = torch.device('cuda:0' if use_cuda else 'cpu')
+        device = torch.device(self.device if use_cuda else 'cpu')
 
         if use_cuda:
             torch.backends.cudnn.enabled = True
@@ -251,7 +254,7 @@ class LSTM(object):
         params = {
             'desc': 'validation progress',
             'smoothing': 0.01,
-            'total': len(testdata)
+            'total': math.ceil(len(testdata) / self.batch_size)
         }
 
         with torch.no_grad():
