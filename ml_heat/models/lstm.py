@@ -1,6 +1,7 @@
 import os
 import zarr
 from tqdm import tqdm
+import numpy as np
 import math
 
 from sklearn.metrics import classification_report, confusion_matrix
@@ -15,6 +16,10 @@ from ml_heat.helper import plot_setup
 
 
 dt = DataTransformer()
+
+# don't always forget determinism you frickin idiot
+torch.manual_seed(0)
+np.random.seed(0)
 
 
 class SXlstm(nn.Module):
