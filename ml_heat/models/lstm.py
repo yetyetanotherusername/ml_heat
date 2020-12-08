@@ -118,6 +118,7 @@ class LSTM(object):
         self.learning_rate = 0.001
         self.momentum = 0.9
         self.batch_size = 10
+        self.gradient_clip = 1000
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -208,14 +209,18 @@ class LSTM(object):
 
                 # forward + backward + optimize
                 y_pred = sxnet(x, lengths)
-
                 y_pred, y = self.reshape_outputs(y_pred, y)
 
                 loss = criterion(y_pred, y)
                 acc, acc_pos, acc_neg = self.binary_acc(y_pred, y)
 
                 loss.backward(retain_graph=True)
+                torch.nn.utils.clip_grad_norm_(
+                    sxnet.parameters(),
+                    self.gradient_clip
+                )
                 optimizer.step()
+
                 epoch_loss += loss.item()
                 epoch_acc += acc.item()
                 epoch_acc_pos += acc_pos.item()
@@ -225,13 +230,17 @@ class LSTM(object):
             losses.append(epoch_loss / epoch_len)
             accuracies.append(epoch_acc / epoch_len)
 
-            print(f'Epoch {e+0:03}: | '
+            print(f'Epoch {e + 1 + 0:03}: | '
                   f'Loss: {epoch_loss / epoch_len:.5f} | '
                   f'Acc: {epoch_acc / epoch_len:.3f} | '
                   f'Pos Acc: {epoch_acc_pos / epoch_len:.3f} | '
                   f'Neg Acc: {epoch_acc_neg / epoch_len:.3f}')
 
-            torch.save(sxnet.state_dict(), self.model_path)
+            if epoch_loss is not math.isnan(epoch_loss):
+                torch.save(sxnet.state_dict(), self.model_path)
+            else:
+                raise Exception('Model has deteriorated, please restart')
+                assert False
 
         plt = plot_setup()
 
