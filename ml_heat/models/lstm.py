@@ -123,10 +123,24 @@ class LSTM(object):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
 
         correct_results_sum = (y_pred_tag == y_test).sum().float()
-        acc = correct_results_sum / y_test.shape[0]
-        acc = torch.round(acc * 100)
 
-        return acc
+        mask = y_test > 0.5
+        y_pos = y_test[mask]
+        y_pred_pos = y_pred_tag[mask]
+        y_neg = y_test[~mask]
+        y_pred_neg = y_pred_tag[~mask]
+
+        corr_pos_sum = (y_pred_pos == y_pos).sum().float()
+        corr_neg_sum = (y_pred_neg == y_neg).sum().float()
+
+        acc = correct_results_sum / y_test.shape[0]
+        acc_pos = corr_pos_sum / y_pos.shape[0]
+        acc_neg = corr_neg_sum / y_neg.shape[0]
+        acc = torch.round(acc * 100)
+        acc_pos = torch.round(acc_pos * 100)
+        acc_neg = torch.round(acc_neg * 100)
+
+        return acc, acc_pos, acc_neg
 
     def reshape_outputs(self, y_pred, y):
         mask = y > -0.5
@@ -181,6 +195,8 @@ class LSTM(object):
         for e in range(self.epochs):  # loop over the dataset multiple times
             epoch_loss = 0
             epoch_acc = 0
+            epoch_acc_pos = 0
+            epoch_acc_neg = 0
             epoch_len = 0
             for batch, lengths in tqdm(trainloader, **params):
                 batch = batch.to(device)
@@ -196,20 +212,24 @@ class LSTM(object):
                 y_pred, y = self.reshape_outputs(y_pred, y)
 
                 loss = criterion(y_pred, y)
-                acc = self.binary_acc(y_pred, y)
+                acc, acc_pos, acc_neg = self.binary_acc(y_pred, y)
 
                 loss.backward(retain_graph=True)
                 optimizer.step()
                 epoch_loss += loss.item()
                 epoch_acc += acc.item()
+                epoch_acc_pos += acc_pos.item()
+                epoch_acc_neg += acc_neg.item()
                 epoch_len += 1
 
             losses.append(epoch_loss / epoch_len)
             accuracies.append(epoch_acc / epoch_len)
 
             print(f'Epoch {e+0:03}: | '
-                  f'Loss: {epoch_loss/epoch_len:.5f} | '
-                  f'Acc: {epoch_acc/epoch_len:.3f}')
+                  f'Loss: {epoch_loss / epoch_len:.5f} | '
+                  f'Acc: {epoch_acc / epoch_len:.3f} | '
+                  f'Pos Acc: {epoch_acc_pos / epoch_len:.3f} | '
+                  f'Neg Acc: {epoch_acc_neg / epoch_len:.3f}')
 
             torch.save(sxnet.state_dict(), self.model_path)
 
