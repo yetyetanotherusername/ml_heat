@@ -269,11 +269,42 @@ def plot_temp():
                 bbox_inches='tight', pad_inches=0.1, metadata=None)
 
 
+def plot_temps():
+    plt = plot_setup()
+    plt.rcParams['axes.grid'] = True
+    plt.rcParams['figure.figsize'] = 12, 8
+
+    frame = load_animal(datapath, '59e75f2b9e182f68cf25721d')
+    frame = frame.reset_index().set_index('datetime')
+
+    frame = frame['2019-01-01':'2019-01-13']
+
+    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(9.0, 4.0))
+    axes[0].plot(frame.index, frame.temp)
+    axes[0].set_ylabel('Rumen\ntemperature (°C)')
+    # axes[0].set_aspect(0.2)
+    axes[1] = plt.subplot(212, sharex=axes[0])
+    axes[1].plot(frame.index, frame.temp_filtered)
+    axes[1].set_ylabel('Filtered\nrumen\ntemperature (°C)')
+    axes[1].set_xlabel('Time')
+    # axes[1].set_aspect(0.2)
+    axes[1].set_ylim(31, 41)
+
+    # plt.tight_layout()
+    plt.savefig(os.path.join(savepath, 'temp_vs_temp_wo.pdf'),
+                dpi=None, facecolor='w', edgecolor='w',
+                orientation='landscape', format=None, transparent=False,
+                bbox_inches='tight', pad_inches=0.1, metadata=None)
+
+    plt.show()
+
+
 def main():
     # plot_sensordata()
     # plot_sensordata1()
-    plot_activity()
-    plot_temp()
+    # plot_activity()
+    # plot_temp()
+    plot_temps()
 
 
 if __name__ == '__main__':

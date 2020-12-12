@@ -215,14 +215,17 @@ class LSTMClassificationPlot(object):
         for ax, title in zip(axes, titles):
             ymax, ymin = ax.get_ylim()
 
-            ax.set_title(title)
+            # ax.set_title(title)
+            if title == 'Temperature':
+                ax.set_xlabel('Sequence index')
+            ax.set_ylabel(f'Normalized\n{title}')
 
             ax.fill_between(
                 range(0, len(dim)), ymin, ymax,
                 where=y_pred,
                 facecolor='r',
                 alpha=0.5,
-                label='classification'
+                label='model_output'
             )
 
             ax.fill_between(
@@ -230,10 +233,11 @@ class LSTMClassificationPlot(object):
                 where=y,
                 facecolor='g',
                 alpha=0.5,
-                label='classification'
+                label='label'
             )
 
             ax.grid()
+            ax.legend()
         plt.show()
 
     def run(self):
