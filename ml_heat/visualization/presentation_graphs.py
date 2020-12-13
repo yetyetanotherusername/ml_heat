@@ -6,6 +6,8 @@ from ml_heat.helper import (
     load_animal
 )
 
+import numpy as np
+
 from ml_heat.preprocessing.transform_data import DataTransformer
 
 datapath = DataTransformer().feather_store
@@ -299,12 +301,56 @@ def plot_temps():
     plt.show()
 
 
+def plot_confusion_matrix():
+    plt = plot_setup()
+    plt.rcParams['figure.figsize'] = 4, 3
+
+    labels = ['No heat', 'heat']
+
+    array = np.array([[495676930, 32952514],
+                      [322323, 2281286]])
+
+    norm_array = array / array.sum(axis=1)[:, None]
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(norm_array)
+
+    cbar = ax.figure.colorbar(im, ax=ax)
+    cbar.ax.set_ylabel('Ratio', rotation=-90, va="bottom")
+
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    # # ... and label them with the respective list entries
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+
+    # # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # # Loop over data dimensions and create text annotations.
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            text = ax.text(j, i, array[i, j],
+                           ha="center", va="center", color="w")
+
+    # ax.set_title("Harvest of local farmers (in tons/year)")
+    fig.tight_layout()
+    plt.savefig(os.path.join(savepath, 'lstm_matrix2.pdf'),
+                dpi=None, facecolor='w', edgecolor='w',
+                orientation='landscape', format=None, transparent=False,
+                bbox_inches='tight', pad_inches=0.1, metadata=None)
+    plt.show()
+
+
 def main():
     # plot_sensordata()
     # plot_sensordata1()
     # plot_activity()
     # plot_temp()
-    plot_temps()
+    # plot_temps()
+    plot_confusion_matrix()
 
 
 if __name__ == '__main__':
