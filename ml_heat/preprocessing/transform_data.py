@@ -30,10 +30,35 @@ from ml_heat.helper import (
 )
 
 
+def create_label_vector(frame):
+    frame['annotation'] = np.logical_or(
+        np.logical_or(frame.pregnant, frame.cyclic),
+        frame.inseminated
+    ).astype(int)
+
+    # debouncing
+    frame['neg_flanks'] = (
+        frame['annotation'].diff() > -0.5
+    ).astype(int)
+
+    frame.neg_flanks[0] = 720
+
+    frame['cs'] = (
+        frame.neg_flanks.cumsum() - frame.neg_flanks.cumsum().where(
+            ~(frame.neg_flanks).astype(bool)
+        ).ffill().fillna(0).astype(int)
+    )
+    frame.annotation[frame.cs < 720] = 0
+
+    frame = frame.drop(['neg_flanks', 'cs'], axis=1)
+
+    return frame
+
+
 def fnn_worker(feather_store, group, animal_id):
     data = load_animal(feather_store, animal_id)
-    data['annotation'] = np.logical_or(
-        np.logical_or(data.pregnant, data.cyclic), data.inseminated)
+
+    data = create_label_vector(data)
 
     data = data[[
         'annotation',
@@ -155,7 +180,8 @@ def add_cyclic(inframe, animal):
         to_dt = dt + span
         try:
             idx = inframe.loc[
-                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
+                from_dt:to_dt, 'act'
+            ].rolling(6, min_periods=1, center=True).mean().idxmax()
         except ValueError:
             continue
 
@@ -203,7 +229,8 @@ def add_inseminated(inframe, animal):
         to_dt = dt + span
         try:
             idx = inframe.loc[
-                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
+                from_dt:to_dt, 'act'
+            ].rolling(6, min_periods=1, center=True).mean().idxmax()
         except ValueError:
             continue
 
@@ -281,7 +308,8 @@ def add_pregnant(inframe, animal):
         to_dt = dt + span
         try:
             idx = inframe.loc[
-                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
+                from_dt:to_dt, 'act'
+            ].rolling(6, min_periods=1, center=True).mean().idxmax()
         except ValueError:
             continue
 
@@ -325,7 +353,8 @@ def add_deleted(inframe, animal, events):
         to_dt = dt + span
         try:
             idx = inframe.loc[
-                from_dt:to_dt, 'act'].rolling(6, min_periods=1).mean().idxmax()
+                from_dt:to_dt, 'act'
+            ].rolling(6, min_periods=1, center=True).mean().idxmax()
         except ValueError:
             continue
 
