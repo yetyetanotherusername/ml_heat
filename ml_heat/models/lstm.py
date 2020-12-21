@@ -115,10 +115,10 @@ class LSTM(object):
         self.device = 'cuda:0'
 
         self.epochs = 10
-        self.learning_rate = 0.001
+        self.learning_rate = 0.0001
         self.momentum = 0.9
         self.batch_size = 10
-        self.gradient_clip = 1000
+        self.gradient_clip = 10
 
     def binary_acc(self, y_pred, y_test):
         y_pred_tag = torch.round(torch.sigmoid(y_pred))
@@ -171,8 +171,10 @@ class LSTM(object):
             lr=self.learning_rate
         )
 
+        torch.autograd.set_detect_anomaly(True)
+
         criterion = nn.BCEWithLogitsLoss(
-            pos_weight=torch.FloatTensor([100.]).to(device))
+            pos_weight=torch.FloatTensor([250.]).to(device))
 
         traindata = Data(self.store, 'train_keys')
         trainloader = DataLoader(
@@ -236,11 +238,10 @@ class LSTM(object):
                   f'Pos Acc: {epoch_acc_pos / epoch_len:.3f} | '
                   f'Neg Acc: {epoch_acc_neg / epoch_len:.3f}')
 
-            if epoch_loss is not math.isnan(epoch_loss):
+            if not math.isnan(epoch_loss):
                 torch.save(sxnet.state_dict(), self.model_path)
             else:
                 raise Exception('Model has deteriorated, please restart')
-                assert False
 
         plt = plot_setup()
 

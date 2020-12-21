@@ -41,14 +41,14 @@ def create_label_vector(frame):
         frame['annotation'].diff() > -0.5
     ).astype(int)
 
-    frame.neg_flanks[0] = 720
+    frame[0, 'neg_flanks'] = 720
 
     frame['cs'] = (
         frame.neg_flanks.cumsum() - frame.neg_flanks.cumsum().where(
             ~(frame.neg_flanks).astype(bool)
         ).ffill().fillna(0).astype(int)
     )
-    frame.annotation[frame.cs < 720] = 0
+    frame[frame.cs < 720, 'annotation'] = 0
 
     frame = frame.drop(['neg_flanks', 'cs'], axis=1)
 
@@ -1087,7 +1087,7 @@ class DataTransformer(object):
         self.arrange_data()
         self.normalize_numeric_cols()
         self.store_to_zarr()
-        # self.validation_split()
+        self.validation_split()
         # self.test()
         # self.report_plot()
         # self.test_feature()
