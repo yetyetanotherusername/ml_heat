@@ -30,7 +30,7 @@ from ml_heat.helper import (
 )
 
 
-def create_label_vector(frame):
+def add_label_vector(frame):
     frame['annotation'] = np.logical_or(
         np.logical_or(frame.pregnant, frame.cyclic),
         frame.inseminated
@@ -41,14 +41,15 @@ def create_label_vector(frame):
         frame['annotation'].diff() > -0.5
     ).astype(int)
 
-    frame[0, 'neg_flanks'] = 720
+    frame.loc[frame.index[0], 'neg_flanks'] = 720
 
     frame['cs'] = (
         frame.neg_flanks.cumsum() - frame.neg_flanks.cumsum().where(
             ~(frame.neg_flanks).astype(bool)
         ).ffill().fillna(0).astype(int)
     )
-    frame[frame.cs < 720, 'annotation'] = 0
+
+    frame.loc[frame.cs < 720, 'annotation'] = 0
 
     frame = frame.drop(['neg_flanks', 'cs'], axis=1)
 
@@ -58,7 +59,7 @@ def create_label_vector(frame):
 def fnn_worker(feather_store, group, animal_id):
     data = load_animal(feather_store, animal_id)
 
-    data = create_label_vector(data)
+    data = add_label_vector(data)
 
     data = data[[
         'annotation',
